@@ -41,7 +41,7 @@ def download_gtfs_data():
 
 
 def download_gtfs_rt_data():
-    local_name = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    local_name = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
     changed_files = 0
     try:
         for remote_name in GTFS_RT_FILES:
