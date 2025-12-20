@@ -1,8 +1,9 @@
 # Modules
+from signal import signal, SIGINT, SIGTERM
 from datetime import datetime
+import threading
 import requests
 import pathlib
-import time
 
 
 # Constants
@@ -29,10 +30,19 @@ def log(message: str, timestamp=True, console=True, file=True):
 
     if file:
         log_cache.append(entry+"\n")
-        if len(log_cache) >= 10:
+        if len(log_cache) >= 10 or shutting_down:
             with open(LOGFILE_PATH, "a") as file:
                 file.writelines(log_cache)
                 log_cache = []
+
+
+shutting_down = False
+stop_event = threading.Event()
+def shutdown(signum, frame):
+    global shutting_down
+    shutting_down = True
+    stop_event.set()
+    log(f"Received signal {signum}, shutting down")
 
 
 def get_latest_gtfs_filename():
@@ -95,6 +105,11 @@ def prepare_directory_structure():
 
 # Main function
 def main():
+    # Signal handlers
+    signal(SIGINT, shutdown)
+    signal(SIGTERM, shutdown)
+
+    # Initial log entries
     log("", timestamp=False, console=False)
     log("#"*15 + " STARTING DOWNLOADER " + "#"*15, console=False)
 
@@ -106,7 +121,7 @@ def main():
         log(f"Failed to prepare archive directory structure: {status[1]}")
 
     # Main loop
-    while True:
+    while not shutting_down:
         # Check for GTFS updates and download data if needed
         status = get_latest_gtfs_filename()
         if not status[0]:
@@ -132,8 +147,11 @@ def main():
         else:
             log(f"Failed to download GTFS-RT data: {status[1]}")
 
-        # Wait until it's time to poll the agency again
-        time.sleep(POLLING_INTERVAL)
+        # Wait until it's time to poll the agency again while responding to interrupts
+        stop_event.wait(timeout=POLLING_INTERVAL)
+
+    # After cleaning up
+    log("Cleanup complete")
 
 
 # Entry point
