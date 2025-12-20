@@ -12,6 +12,7 @@ GTFS_RT_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGtfsRtFile"
 GTFS_RT_FILES = ["feeds.pb", "trip_updates.pb", "vehicle_dictionary.pb", "vehicle_positions.pb"]
 ARCHIVE_PATH = "archive/"
 LOGFILE_PATH = "downloader.log"
+LOG_BUFFER_SIZE = 10
 POLLING_INTERVAL = 45
 
 
@@ -30,7 +31,7 @@ def log(message: str, timestamp=True, console=True, file=True):
 
     if file:
         log_cache.append(entry+"\n")
-        if len(log_cache) >= 10 or shutting_down:
+        if len(log_cache) >= LOG_BUFFER_SIZE or shutting_down:
             with open(LOGFILE_PATH, "a") as file:
                 file.writelines(log_cache)
                 log_cache = []
