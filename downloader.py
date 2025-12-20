@@ -13,7 +13,7 @@ GTFS_RT_FILES = ["feeds.pb", "trip_updates.pb", "vehicle_dictionary.pb", "vehicl
 ARCHIVE_PATH = "archive/"
 LOGFILE_PATH = "downloader.log"
 LOG_BUFFER_SIZE = 10
-POLLING_INTERVAL = 45
+POLLING_INTERVAL = 60
 
 
 # Functions
@@ -123,6 +123,7 @@ def main():
 
     # Main loop
     while not shutting_down:
+        start_time = datetime.now()
         # Check for GTFS updates and download data if needed
         status = get_latest_gtfs_filename()
         if not status[0]:
@@ -149,7 +150,8 @@ def main():
             log(f"Failed to download GTFS-RT data: {status[1]}")
 
         # Wait until it's time to poll the agency again while responding to interrupts
-        stop_event.wait(timeout=POLLING_INTERVAL)
+        elapsed = (datetime.now() - start_time).total_seconds()
+        stop_event.wait(timeout=max(0.0, POLLING_INTERVAL-elapsed))
 
     # After cleaning up
     log("Cleanup complete")
