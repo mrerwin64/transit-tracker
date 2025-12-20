@@ -78,7 +78,7 @@ def load_config():
 
 def get_latest_gtfs_filename():
     try:
-        response = requests.head(GTFS_URL)
+        response = requests.head(GTFS_URL, timeout=30)
         content_disposition = response.headers.get('Content-Disposition')
         filename = content_disposition.split()[1][10:-1]
         return True, filename
@@ -88,7 +88,7 @@ def get_latest_gtfs_filename():
 
 def download_gtfs_data():
     try:
-        response = requests.get(GTFS_URL)
+        response = requests.get(GTFS_URL, timeout=60)
         content_disposition = response.headers.get("Content-Disposition")
         filename = content_disposition.split()[1][10:-1]
         with open(ARCHIVE_PATH+"gtfs/"+filename, "wb") as file:
@@ -103,7 +103,7 @@ def download_gtfs_rt_data():
     changed_files = 0
     try:
         for remote_name in GTFS_RT_FILES:
-            response = requests.get(GTFS_RT_URL+"?file="+remote_name)
+            response = requests.get(GTFS_RT_URL+"?file="+remote_name, timeout=30)
             target_path = pathlib.Path(ARCHIVE_PATH+"gtfs-rt/"+remote_name+"/")
             previous_files = list(target_path.iterdir())
             if len(previous_files) == 0 or max(previous_files, key=str).read_bytes() != response.content:
