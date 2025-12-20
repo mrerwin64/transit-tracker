@@ -6,7 +6,7 @@ import requests
 import pathlib
 
 
-# Constants
+# Constant defaults
 GTFS_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGTFSFile"
 GTFS_RT_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGtfsRtFile"
 GTFS_RT_FILES = ["feeds.pb", "trip_updates.pb", "vehicle_dictionary.pb", "vehicle_positions.pb"]
@@ -44,6 +44,36 @@ def shutdown(signum, frame):
     shutting_down = True
     stop_event.set()
     log(f"Received signal {signum}, shutting down")
+
+
+def load_config():
+    global GTFS_URL, GTFS_RT_URL, GTFS_RT_FILES, ARCHIVE_PATH, LOGFILE_PATH, LOG_BUFFER_SIZE, POLLING_INTERVAL
+
+    try:
+        import downloader_config as cfg
+    except ModuleNotFoundError as e:
+        return False, e
+
+    keys = [
+        "GTFS_URL",
+        "GTFS_RT_URL",
+        "GTFS_RT_FILES",
+        "ARCHIVE_PATH",
+        "LOGFILE_PATH",
+        "LOG_BUFFER_SIZE",
+        "POLLING_INTERVAL",
+    ]
+
+    changes = 0
+    for key in keys:
+        if hasattr(cfg, key):
+            old = globals()[key]
+            new = getattr(cfg, key)
+            if new != old:
+                globals()[key] = new
+                changes += 1
+
+    return True, changes
 
 
 def get_latest_gtfs_filename():
@@ -113,6 +143,16 @@ def main():
     # Initial log entries
     log("", timestamp=False, console=False)
     log("#"*15 + " STARTING DOWNLOADER " + "#"*15, console=False)
+
+    # Load constants from config file
+    if pathlib.Path("downloader_config.py").is_file():
+        status = load_config()
+        if status[0]:
+            log(f"Successfully loaded config file - {status[1]} parameters modified")
+        else:
+            log(f"Failed to load config file: {status[1]}")
+    else:
+        log("No config file found")
 
     # Prepare directory structure
     status = prepare_directory_structure()
