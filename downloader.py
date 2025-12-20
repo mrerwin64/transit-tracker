@@ -1,5 +1,5 @@
 # Modules
-from datetime import datetime, timezone
+from datetime import datetime
 import requests
 import pathlib
 import time
@@ -10,12 +10,29 @@ GTFS_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGTFSFile"
 GTFS_RT_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGtfsRtFile"
 GTFS_RT_FILES = ["feeds.pb", "trip_updates.pb", "vehicle_dictionary.pb", "vehicle_positions.pb"]
 ARCHIVE_PATH = "archive/"
+LOGFILE_PATH = "downloader.log"
 POLLING_INTERVAL = 45
 
 
 # Functions
-def log(message: str):
-    print(f"[{datetime.now().replace(microsecond=0).isoformat().replace('T', ' ')}]: {message}")
+log_cache = []
+def log(message: str, timestamp=True, console=True, file=True):
+    global log_cache
+
+    if timestamp:
+        entry = f"[{datetime.now().replace(microsecond=0).isoformat().replace('T', ' ')}]: {message}"
+    else:
+        entry = message
+
+    if console:
+        print(entry)
+
+    if file:
+        log_cache.append(entry+"\n")
+        if len(log_cache) >= 10:
+            with open(LOGFILE_PATH, "a") as file:
+                file.writelines(log_cache)
+                log_cache = []
 
 
 def get_latest_gtfs_filename():
@@ -78,6 +95,9 @@ def prepare_directory_structure():
 
 # Main function
 def main():
+    log("", timestamp=False, console=False)
+    log("#"*15 + " STARTING DOWNLOADER " + "#"*15, console=False)
+
     # Prepare directory structure
     status = prepare_directory_structure()
     if status[0]:
