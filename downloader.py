@@ -18,13 +18,17 @@ POLLING_INTERVAL = 60
 
 # Functions
 log_cache = []
-def log(message: str, timestamp=True, console=True, file=True):
+def log(message: str, level="INFO", timestamp=True, console=True, file=True):
     global log_cache
 
+    entry = ""
+    if level != "":
+        entry += f"[{level}]"
     if timestamp:
-        entry = f"[{datetime.now().replace(microsecond=0).isoformat().replace('T', ' ')}]: {message}"
-    else:
-        entry = message
+        entry += f"[{datetime.now().replace(microsecond=0).isoformat().replace('T', ' ')}]"
+    if len(entry) > 0:
+        entry += ": "
+    entry += message
 
     if console:
         print(entry)
@@ -141,8 +145,8 @@ def main():
     signal(SIGTERM, shutdown)
 
     # Initial log entries
-    log("", timestamp=False, console=False)
-    log("#"*15 + " STARTING DOWNLOADER " + "#"*15, console=False)
+    log("", level="", timestamp=False, console=False)
+    log("#"*20 + " STARTING DOWNLOADER " + "#"*20, level="", console=False)
 
     # Load constants from config file
     if pathlib.Path("downloader_config.py").is_file():
@@ -150,16 +154,16 @@ def main():
         if status[0]:
             log(f"Successfully loaded config file - {status[1]} parameters modified")
         else:
-            log(f"Failed to load config file: {status[1]}")
+            log(f"Failed to load config file: {status[1]}", level="WARNING")
     else:
-        log("No config file found")
+        log("No config file found", level="WARNING")
 
     # Prepare directory structure
     status = prepare_directory_structure()
     if status[0]:
         log("Successfully prepared archive directory structure")
     else:
-        log(f"Failed to prepare archive directory structure: {status[1]}")
+        log(f"Failed to prepare archive directory structure: {status[1]}", level="ERROR")
 
     # Main loop
     while not shutting_down:
@@ -167,7 +171,7 @@ def main():
         # Check for GTFS updates and download data if needed
         status = get_latest_gtfs_filename()
         if not status[0]:
-            log(f"Failed to get latest GTFS data filename: {status[1]}")
+            log(f"Failed to get latest GTFS data filename: {status[1]}", level="WARNING")
             remote_latest = ""
         else:
             remote_latest = status[1]
@@ -175,19 +179,21 @@ def main():
         gtfs_path = pathlib.Path(ARCHIVE_PATH+"gtfs/")
         gtfs_files = list(gtfs_path.iterdir())
         if len(gtfs_files) == 0 or max(gtfs_files, key=str).parts[-1] != remote_latest:
-            log("Found new GTFS data")
+            if len(remote_latest) > 0:
+                log("Found new GTFS data")
+
             status = download_gtfs_data()
             if status[0]:
                 log(f"Successfully downloaded GTFS data: {status[1]}")
             else:
-                log(f"Failed to download GTFS data: {status[1]}")
+                log(f"Failed to download GTFS data: {status[1]}", level="WARNING")
 
         # Download GTFS-RT data
         status = download_gtfs_rt_data()
         if status[0]:
             log(f"Successfully downloaded GTFS-RT data - {status[1]} files changed")
         else:
-            log(f"Failed to download GTFS-RT data: {status[1]}")
+            log(f"Failed to download GTFS-RT data: {status[1]}", level="WARNING")
 
         # Wait until it's time to poll the agency again while responding to interrupts
         elapsed = (datetime.now() - start_time).total_seconds()
