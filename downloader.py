@@ -12,14 +12,18 @@ GTFS_RT_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGtfsRtFile"
 GTFS_RT_FILES = ["feeds.pb", "trip_updates.pb", "vehicle_dictionary.csv", "vehicle_positions.pb"]
 ARCHIVE_PATH = "archive/"
 LOGFILE_PATH = "downloader.log"
+VERBOSE = True
 LOG_BUFFER_SIZE = 10
 POLLING_INTERVAL = 60
 
 
 # Functions
 log_cache = []
-def log(message: str, level="INFO", timestamp=True, console=True, file=True):
+def log(message: str, level="INFO", timestamp=True, console=True, file=True, verbose=False):
     global log_cache
+
+    if verbose and not VERBOSE:
+        return
 
     entry = ""
     if level != "":
@@ -191,7 +195,7 @@ def main():
         # Download GTFS-RT data
         status = download_gtfs_rt_data()
         if status[0]:
-            log(f"Successfully downloaded GTFS-RT data - {status[1]} files changed")
+            log(f"Successfully downloaded GTFS-RT data - {status[1]} files changed", verbose=True)
         else:
             log(f"Failed to download GTFS-RT data: {status[1]}", level="WARNING")
 
