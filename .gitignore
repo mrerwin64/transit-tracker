@@ -5,3 +5,4 @@
 /archive/
 /downloader.log
 /downloader_config.py
+/__pycache__
