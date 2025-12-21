@@ -55,7 +55,7 @@ def shutdown(signum, frame):
 
 
 def load_config():
-    global GTFS_URL, GTFS_RT_URL, GTFS_RT_FILES, ARCHIVE_PATH, LOGFILE_PATH, LOG_BUFFER_SIZE, POLLING_INTERVAL
+    global GTFS_URL, GTFS_RT_URL, GTFS_RT_FILES, ARCHIVE_PATH, LOGFILE_PATH, VERBOSE, LOG_BUFFER_SIZE, POLLING_INTERVAL
 
     try:
         import downloader_config as cfg
@@ -68,6 +68,7 @@ def load_config():
         "GTFS_RT_FILES",
         "ARCHIVE_PATH",
         "LOGFILE_PATH",
+        "VERBOSE",
         "LOG_BUFFER_SIZE",
         "POLLING_INTERVAL",
     ]
