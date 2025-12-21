@@ -9,7 +9,7 @@ import pathlib
 # Constant defaults
 GTFS_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGTFSFile"
 GTFS_RT_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGtfsRtFile"
-GTFS_RT_FILES = ["feeds.pb", "trip_updates.pb", "vehicle_dictionary.pb", "vehicle_positions.pb"]
+GTFS_RT_FILES = ["feeds.pb", "trip_updates.pb", "vehicle_dictionary.csv", "vehicle_positions.pb"]
 ARCHIVE_PATH = "archive/"
 LOGFILE_PATH = "downloader.log"
 LOG_BUFFER_SIZE = 10
