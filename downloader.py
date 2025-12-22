@@ -88,17 +88,22 @@ def load_constants():
     return True, changes
 
 
-def get_latest_gtfs_filename():
+def get_latest_gtfs_filename(is_retry=False):
     try:
         response = requests.head(GTFS_URL, timeout=5)
         content_disposition = response.headers.get('Content-Disposition')
         filename = content_disposition.split()[1][10:-1]
         return True, filename
     except Exception as e:
-        return False, e
+        if not is_retry:
+            log("Failed to get latest GTFS archive filename, retrying in 5 seconds", level="WARNING")
+            stop_event.wait(timeout=5)
+            return get_latest_gtfs_filename(is_retry=True)
+        else:
+            return False, e
 
 
-def download_gtfs_data():
+def download_gtfs_archive(is_retry=False):
     try:
         response = requests.get(GTFS_URL, timeout=15)
         content_disposition = response.headers.get("Content-Disposition")
@@ -110,10 +115,15 @@ def download_gtfs_data():
             create_metadata_file(metadata_path, timestamp=True)
         return True, filename
     except Exception as e:
-        return False, e
+        if not is_retry:
+            log("Failed to download GTFS data, retrying in 10 seconds", level="WARNING")
+            stop_event.wait(timeout=10)
+            return download_gtfs_archive(is_retry=True)
+        else:
+            return False, e
 
 
-def download_gtfs_rt_file(remote_name: str, local_name: str, static=False):
+def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_retry=False):
     try:
         response = requests.get(GTFS_RT_URL+"?file="+remote_name, timeout=5)
         if static:
@@ -130,7 +140,12 @@ def download_gtfs_rt_file(remote_name: str, local_name: str, static=False):
                 new_file.write(response.content)
         return True, changed
     except Exception as e:
-        return False, e
+        if not is_retry:
+            log(f"Failed to download GTFS-RT file {remote_name}, retrying in 5 seconds", level="WARNING")
+            stop_event.wait(timeout=5)
+            return download_gtfs_rt_file(remote_name, local_name, static, is_retry=True)
+        else:
+            return False, e
 
 
 def create_metadata_file(path: str, timestamp=False):
@@ -238,7 +253,7 @@ def check_and_download_gtfs_data():
         if len(remote_latest) > 0:
             log("Found new GTFS data")
 
-        status = download_gtfs_data()
+        status = download_gtfs_archive()
         if status[0]:
             log(f"Successfully downloaded GTFS data: {status[1]}")
         else:
