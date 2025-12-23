@@ -93,6 +93,9 @@ def get_latest_gtfs_filename(is_retry=False):
         response = requests.head(GTFS_URL, timeout=5)
         content_disposition = response.headers.get('Content-Disposition')
         filename = content_disposition.split()[1][10:-1]
+
+        if is_retry:
+            log("Retry successful")
         return True, filename
     except Exception as e:
         if not is_retry:
@@ -113,6 +116,9 @@ def download_gtfs_archive(is_retry=False):
         metadata_path = ARCHIVE_PATH+"gtfs/"+filename+".json"
         if not pathlib.Path(metadata_path).is_file():
             create_metadata_file(metadata_path, timestamp=True)
+
+        if is_retry:
+            log("Retry successful")
         return True, filename
     except Exception as e:
         if not is_retry:
@@ -138,6 +144,9 @@ def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_re
                 create_metadata_file(ARCHIVE_PATH+"gtfs-rt/static/"+remote_name+"/"+local_name+".json")
             with (target_path/local_name).open("wb") as new_file:
                 new_file.write(response.content)
+
+        if is_retry:
+            log("Retry successful")
         return True, changed
     except Exception as e:
         if not is_retry:
