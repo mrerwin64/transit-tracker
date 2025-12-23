@@ -44,7 +44,7 @@ def log(message: str, level="INFO", timestamp=True, console=True, file=True, ver
         if len(log_cache) >= LOG_BUFFER_SIZE or shutting_down:
             with open(LOGFILE_PATH, "a") as file:
                 file.writelines(log_cache)
-                log_cache = []
+                log_cache.clear()
 
 
 shutting_down = False
