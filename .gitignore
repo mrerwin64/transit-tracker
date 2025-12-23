@@ -6,3 +6,5 @@
 /downloader.log
 /downloader_config.py
 /__pycache__
+/human
+/update-vm.sh
