@@ -1,3 +1,4 @@
+# Modules
 from google.protobuf.json_format import MessageToDict
 from google.transit import gtfs_realtime_pb2
 import pathlib
@@ -7,6 +8,7 @@ import csv
 import io
 
 
+# Utility functions
 def pb_to_dict(pb_path: str | pathlib.Path) -> dict:
     feed = gtfs_realtime_pb2.FeedMessage()
     with open(pb_path, "rb") as file:
@@ -14,8 +16,8 @@ def pb_to_dict(pb_path: str | pathlib.Path) -> dict:
     return MessageToDict(feed)
 
 
-def gtfs_to_csv(gtfs_path: str | pathlib.Path, filename: str) -> list:
-    if type(gtfs_path) is str:
+def gtfs_to_list(gtfs_path: str | pathlib.Path, filename: str) -> list:
+    if isinstance(gtfs_path, str):
         gtfs_path = pathlib.Path(gtfs_path)
     if gtfs_path.is_file():  # Assume GTFS data is provided as a zip archive
         with zipfile.ZipFile(gtfs_path, "r") as zip_file:
@@ -28,21 +30,9 @@ def gtfs_to_csv(gtfs_path: str | pathlib.Path, filename: str) -> list:
     else:
         raise Exception("Invalid GTFS data")
     return csv_reader
-    
-
-def route_to_trips(route: str, gtfs_path: str) -> list[str]:
-    trips_txt = gtfs_to_csv(gtfs_path, "trips.txt")
-    route_trips = []
-    i = 0
-    while i < len(trips_txt) and trips_txt[i][0] != route:
-        i += 1
-    while i < len(trips_txt) and trips_txt[i][0] == route:
-        route_trips.append(trips_txt[i][2])
-        i += 1
-    return route_trips
 
 
-def trip_updates(trip_or_route: str, feed_path: str) -> list[dict[str, int]]:
+def gtfs_rt_to_dict(feed_path: str | pathlib.Path) -> dict:
     feed_file = pathlib.Path(feed_path)
     if feed_file.suffix == ".json":
         with open(feed_file, "r") as file:
@@ -51,21 +41,63 @@ def trip_updates(trip_or_route: str, feed_path: str) -> list[dict[str, int]]:
         feed = pb_to_dict(feed_file)
     else:
         raise Exception("Invalid GTFS-RT feed")
+    return feed
 
-    updates = []
-    messages = feed["entity"]
-    for message in messages:
+
+# GTFS functions
+def route_to_trips(routes: str | list[str], gtfs_path: str) -> list[str] | dict[str, list[str]]:
+    trips_txt = gtfs_to_list(gtfs_path, "trips.txt")
+    if isinstance(routes, str):
+        routes = [routes]
+
+    trips = {x: [] for x in routes}
+    for line in trips_txt[1:]:
+        route = line[0]
+        if route in routes:
+            trips[route].append(line[2])
+
+    if len(routes) == 1:
+        return trips[routes[0]]
+    else:
+        return trips
+
+
+def trip_to_stops(trips: str | list[str], gtfs_path: str) -> list[int] | dict[str, list[int]]:
+    stop_times_txt = gtfs_to_list(gtfs_path, "stop_times.txt")
+    if isinstance(trips, str):
+        trips = [trips]
+
+    stops = {x: [] for x in trips}
+    for line in stop_times_txt[1:]:
+        trip = line[0]
+        if trip in trips:
+            stops[trip].append(int(line[3]))
+
+    if len(trips) == 1:
+        return stops[trips[0]]
+    else:
+        return stops
+
+
+# GTFS-RT functions
+def trip_updates(trips_or_routes: str | list[str], feed_path: str) -> list[dict[str, str | int]] | dict[str, list[dict[str, str | int]]]:
+    feed = gtfs_rt_to_dict(feed_path)
+    if isinstance(trips_or_routes, str):
+        trips_or_routes = [trips_or_routes]
+
+    updates = {x: [] for x in trips_or_routes}
+    for message in feed["entity"]:
         if "tripUpdate" in message:
             update = {"route": message["tripUpdate"]["trip"]["routeId"],
                       "trip": message["tripUpdate"]["trip"]["tripId"],
                       "next_stop": message["tripUpdate"]["stopTimeUpdate"][0]["stopSequence"],
                       "delay": message["tripUpdate"]["stopTimeUpdate"][0]["arrival"]["delay"]}
-            if trip_or_route in (update["route"], update["trip"]):
-                updates.append(update)
-    return updates
+            if update["trip"] in trips_or_routes:
+                updates[update["trip"]].append(update)
+            elif update["route"] in trips_or_routes:
+                updates[update["route"]].append(update)
 
-
-def trip_to_stops(trip: str, gtfs_path: str) -> list[int]:
-    stop_times_txt = gtfs_to_csv(gtfs_path, "stop_times.txt")
-    stops = [x[3] for x in filter(lambda x: x[0] == trip, stop_times_txt)]
-    return stops
+    if len(trips_or_routes) == 1:
+        return updates[trips_or_routes[0]]
+    else:
+        return updates
