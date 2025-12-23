@@ -91,7 +91,8 @@ def trip_updates(trips_or_routes: str | list[str], feed_path: str) -> list[dict[
             update = {"route": message["tripUpdate"]["trip"]["routeId"],
                       "trip": message["tripUpdate"]["trip"]["tripId"],
                       "next_stop": message["tripUpdate"]["stopTimeUpdate"][0]["stopSequence"],
-                      "delay": message["tripUpdate"]["stopTimeUpdate"][0]["arrival"]["delay"]}
+                      "delay": message["tripUpdate"]["stopTimeUpdate"][0]["arrival"]["delay"],
+                      "timestamp": message["tripUpdate"]["timestamp"]}
             if update["trip"] in trips_or_routes:
                 updates[update["trip"]].append(update)
             elif update["route"] in trips_or_routes:
