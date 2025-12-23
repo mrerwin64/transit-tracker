@@ -45,7 +45,25 @@ def gtfs_rt_to_dict(feed_path: str | pathlib.Path) -> dict:
 
 
 # GTFS functions
-def route_to_trips(routes: str | list[str], gtfs_path: str) -> list[str] | dict[str, list[str]]:
+def routes(gtfs_path: str | pathlib.Path) -> list[str]:
+    routes_txt = gtfs_to_list(gtfs_path, "routes.txt")
+    result = [x[0] for x in routes_txt[1:]]
+    return result
+
+
+def stops(gtfs_path: str | pathlib.Path) -> list[tuple[int, str, str]]:
+    stops_txt = gtfs_to_list(gtfs_path, "stops.txt")
+    result = [(int(x[0]), x[1], x[2]) for x in stops_txt[1:]]
+    return result
+
+
+def trips(gtfs_path: str | pathlib.Path) -> list[tuple[str, str]]:
+    trips_txt = gtfs_to_list(gtfs_path, "trips.txt")
+    result = [(x[2], x[0]) for x in trips_txt[1:]]
+    return result
+
+
+def routes_to_trips(routes: str | list[str], gtfs_path: str | pathlib.Path) -> list[str] | dict[str, list[str]]:
     trips_txt = gtfs_to_list(gtfs_path, "trips.txt")
     if isinstance(routes, str):
         routes = [routes]
@@ -62,7 +80,7 @@ def route_to_trips(routes: str | list[str], gtfs_path: str) -> list[str] | dict[
         return trips
 
 
-def trip_to_stops(trips: str | list[str], gtfs_path: str) -> list[int] | dict[str, list[int]]:
+def trips_to_stops(trips: str | list[str], gtfs_path: str | pathlib.Path) -> list[int] | dict[str, list[int]]:
     stop_times_txt = gtfs_to_list(gtfs_path, "stop_times.txt")
     if isinstance(trips, str):
         trips = [trips]
@@ -80,7 +98,7 @@ def trip_to_stops(trips: str | list[str], gtfs_path: str) -> list[int] | dict[st
 
 
 # GTFS-RT functions
-def trip_updates(trips_or_routes: str | list[str], feed_path: str) -> list[dict[str, str | int]] | dict[str, list[dict[str, str | int]]]:
+def trip_updates(trips_or_routes: str | list[str], feed_path: str | pathlib.Path) -> list[dict[str, str | int]] | dict[str, list[dict[str, str | int]]]:
     feed = gtfs_rt_to_dict(feed_path)
     if isinstance(trips_or_routes, str):
         trips_or_routes = [trips_or_routes]
