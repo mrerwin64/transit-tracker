@@ -37,7 +37,7 @@ def gtfs_rt_to_dict(feed_path: str | pathlib.Path) -> dict:
     if feed_file.suffix == ".json":
         with open(feed_file, "r") as file:
             feed = json.load(file)
-    elif feed_file.suffix == ".pb":
+    elif feed_file.suffix in (".pb", ""):
         feed = pb_to_dict(feed_file)
     else:
         raise Exception("Invalid GTFS-RT feed")
