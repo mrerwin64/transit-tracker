@@ -1,6 +1,7 @@
 # Modules
 from google.protobuf.json_format import MessageToDict
 from google.transit import gtfs_realtime_pb2
+from datetime import datetime, time
 import pathlib
 import zipfile
 import json
@@ -92,14 +93,19 @@ def routes_to_trips(routes: list[str], gtfs_path: str | pathlib.Path) -> dict[st
     return trips
 
 
-def trips_to_stops(trips: list[str], gtfs_path: str | pathlib.Path) -> dict[str, list[int]]:
-    """Return all stop_ids of a trip, for multiple trips."""
+def trips_to_stops(trips: list[str], gtfs_path: str | pathlib.Path) -> dict[str, list[tuple[int, time]]]:
+    """Return all stops of a trip, in order, for multiple trips.
+
+    Returns:
+        Dictionary mapping lists of tuples (stop_id, stop_time) to given trip_ids
+    """
     stop_times_txt = gtfs_to_list(gtfs_path, "stop_times.txt")
     stops = {x: [] for x in trips}
     for line in stop_times_txt[1:]:
         trip = line[0]
         if trip in trips:
-            stops[trip].append(int(line[3]))
+            stop = (int(line[3]), datetime.strptime(line[2], "%H:%M:%S").time())
+            stops[trip].append(stop)
     return stops
 
 

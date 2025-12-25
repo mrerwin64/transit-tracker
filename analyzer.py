@@ -55,7 +55,7 @@ def trips_stop_delays(trips: list[str], gtfs_file: pathlib.Path, gtfs_rt_files: 
         for trip in trips:
             all_updates[trip] += updates[trip]
 
-    trip_stop_ids = reader.trips_to_stops(trips, gtfs_file)
+    trip_stop_ids = {key: [x[0] for x in value] for key, value in reader.trips_to_stops(trips, gtfs_file).items()}
     trip_stop_delays = {}
     for trip in trips:
         stop_ids = trip_stop_ids[trip]
