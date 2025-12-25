@@ -4,6 +4,12 @@ import reader
 
 
 def match_gtfs_archives_with_rt_files(gtfs_dir: str | pathlib.Path, gtfs_rt_dir: str | pathlib.Path) -> dict[pathlib.Path, dict[date, list[pathlib.Path]]]:
+    """Match GTFS archives with GTFS-RT files and group them by date.
+
+    Returns:
+        Dictionary mapping GTFS-RT files grouped by date to GTFS archives.
+        Doesn't return GTFS archives with no matching GTFS-RT files.
+    """
     # Convert path string to pathlib.Path
     if isinstance(gtfs_dir, str):
         gtfs_dir = pathlib.Path(gtfs_dir)
@@ -36,6 +42,13 @@ def match_gtfs_archives_with_rt_files(gtfs_dir: str | pathlib.Path, gtfs_rt_dir:
 
 
 def trips_stop_delays(trips: list[str], gtfs_file: pathlib.Path, gtfs_rt_files: list[pathlib.Path]) -> dict[str, dict[int, int | None]]:
+    """Return delays for each stop of each given route.
+
+    Returns:
+        Dictionary mapping dictionaries of stop_ids and their delays to trip_ids.
+        If there is no data about a given stop the delay is None.
+        If there is no data at all about a given trip every stops delay will be None.
+    """
     all_updates = {x: [] for x in trips}
     for rt_file in gtfs_rt_files:
         updates = reader.trip_updates(trips, rt_file)
@@ -58,6 +71,7 @@ def trips_stop_delays(trips: list[str], gtfs_file: pathlib.Path, gtfs_rt_files: 
 
 
 def routes_stop_delays(routes: list[str], gtfs: pathlib.Path, gtfs_rt: list[pathlib.Path]) -> dict[str, dict[str, dict[int, int | None]]]:
+    """Returns trips_stop_delays() for each given route."""
     results = {}
     for route in routes:
         trips = reader.routes_to_trips([route], gtfs)[route]

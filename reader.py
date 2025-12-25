@@ -10,6 +10,7 @@ import io
 
 # Utility functions
 def pb_to_dict(pb_path: str | pathlib.Path) -> dict:
+    """Return a GTFS-RT protobuf file as a dictionary."""
     feed = gtfs_realtime_pb2.FeedMessage()
     with open(pb_path, "rb") as file:
         feed.ParseFromString(file.read())
@@ -17,6 +18,7 @@ def pb_to_dict(pb_path: str | pathlib.Path) -> dict:
 
 
 def gtfs_to_list(gtfs_path: str | pathlib.Path, filename: str) -> list:
+    """Return a GTFS file as a csv-like 2D list."""
     if isinstance(gtfs_path, str):
         gtfs_path = pathlib.Path(gtfs_path)
     if gtfs_path.is_file():  # Assume GTFS data is provided as a zip archive
@@ -33,6 +35,7 @@ def gtfs_to_list(gtfs_path: str | pathlib.Path, filename: str) -> list:
 
 
 def gtfs_rt_to_dict(feed_path: str | pathlib.Path) -> dict:
+    """Return a GTFS-RT file (protobuf or JSON) as a dictionary."""
     feed_file = pathlib.Path(feed_path)
     if feed_file.suffix == ".json":
         with open(feed_file, "r") as file:
@@ -46,24 +49,40 @@ def gtfs_rt_to_dict(feed_path: str | pathlib.Path) -> dict:
 
 # GTFS functions
 def routes(gtfs_path: str | pathlib.Path) -> list[str]:
+    """Return all route_ids in a GTFS file."""
     routes_txt = gtfs_to_list(gtfs_path, "routes.txt")
     result = [x[0] for x in routes_txt[1:]]
     return result
 
 
 def stops(gtfs_path: str | pathlib.Path) -> list[tuple[int, str, str]]:
+    """Return all stops in a GTFS file.
+
+    Returns:
+        List of tuples representing a stop (stop_id, stop_code, stop_name).
+    """
     stops_txt = gtfs_to_list(gtfs_path, "stops.txt")
     result = [(int(x[0]), x[1], x[2]) for x in stops_txt[1:]]
     return result
 
 
 def trips(gtfs_path: str | pathlib.Path) -> list[tuple[str, str]]:
+    """Return all trips in a GTFS file.
+
+    Returns:
+        List of tuples representing a trip (trip_id, route_id).
+    """
     trips_txt = gtfs_to_list(gtfs_path, "trips.txt")
     result = [(x[2], x[0]) for x in trips_txt[1:]]
     return result
 
 
 def routes_to_trips(routes: list[str], gtfs_path: str | pathlib.Path) -> dict[str, list[str]]:
+    """Return all trips of a route, for multiple routes.
+
+    Returns:
+        Dictionary mapping a list of trip_ids to each route_id.
+    """
     trips_txt = gtfs_to_list(gtfs_path, "trips.txt")
     trips = {x: [] for x in routes}
     for line in trips_txt[1:]:
@@ -74,6 +93,7 @@ def routes_to_trips(routes: list[str], gtfs_path: str | pathlib.Path) -> dict[st
 
 
 def trips_to_stops(trips: list[str], gtfs_path: str | pathlib.Path) -> dict[str, list[int]]:
+    """Return all stop_ids of a trip, for multiple trips."""
     stop_times_txt = gtfs_to_list(gtfs_path, "stop_times.txt")
     stops = {x: [] for x in trips}
     for line in stop_times_txt[1:]:
@@ -85,6 +105,11 @@ def trips_to_stops(trips: list[str], gtfs_path: str | pathlib.Path) -> dict[str,
 
 # GTFS-RT functions
 def trip_updates(trips_or_routes: list[str], feed_path: str | pathlib.Path) -> dict[str, list[dict[str, str | int]]]:
+    """Return all trip updates for route or trip, for multiple route_ids/trip_ids.
+
+    Returns:
+        Dictionary mapping a list of updates (also dictionaries) to each route/trip id.
+    """
     feed = gtfs_rt_to_dict(feed_path)
     updates = {x: [] for x in trips_or_routes}
     for message in feed["entity"]:
