@@ -63,46 +63,29 @@ def trips(gtfs_path: str | pathlib.Path) -> list[tuple[str, str]]:
     return result
 
 
-def routes_to_trips(routes: str | list[str], gtfs_path: str | pathlib.Path) -> list[str] | dict[str, list[str]]:
+def routes_to_trips(routes: list[str], gtfs_path: str | pathlib.Path) -> dict[str, list[str]]:
     trips_txt = gtfs_to_list(gtfs_path, "trips.txt")
-    if isinstance(routes, str):
-        routes = [routes]
-
     trips = {x: [] for x in routes}
     for line in trips_txt[1:]:
         route = line[0]
         if route in routes:
             trips[route].append(line[2])
-
-    if len(routes) == 1:
-        return trips[routes[0]]
-    else:
-        return trips
+    return trips
 
 
-def trips_to_stops(trips: str | list[str], gtfs_path: str | pathlib.Path) -> list[int] | dict[str, list[int]]:
+def trips_to_stops(trips: list[str], gtfs_path: str | pathlib.Path) -> dict[str, list[int]]:
     stop_times_txt = gtfs_to_list(gtfs_path, "stop_times.txt")
-    if isinstance(trips, str):
-        trips = [trips]
-
     stops = {x: [] for x in trips}
     for line in stop_times_txt[1:]:
         trip = line[0]
         if trip in trips:
             stops[trip].append(int(line[3]))
-
-    if len(trips) == 1:
-        return stops[trips[0]]
-    else:
-        return stops
+    return stops
 
 
 # GTFS-RT functions
-def trip_updates(trips_or_routes: str | list[str], feed_path: str | pathlib.Path) -> list[dict[str, str | int]] | dict[str, list[dict[str, str | int]]]:
+def trip_updates(trips_or_routes: list[str], feed_path: str | pathlib.Path) -> dict[str, list[dict[str, str | int]]]:
     feed = gtfs_rt_to_dict(feed_path)
-    if isinstance(trips_or_routes, str):
-        trips_or_routes = [trips_or_routes]
-
     updates = {x: [] for x in trips_or_routes}
     for message in feed["entity"]:
         if "tripUpdate" in message:
@@ -115,8 +98,4 @@ def trip_updates(trips_or_routes: str | list[str], feed_path: str | pathlib.Path
                 updates[update["trip"]].append(update)
             elif update["route"] in trips_or_routes:
                 updates[update["route"]].append(update)
-
-    if len(trips_or_routes) == 1:
-        return updates[trips_or_routes[0]]
-    else:
-        return updates
+    return updates

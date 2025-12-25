@@ -30,30 +30,23 @@ def match_gtfs_archives_with_rt_files(gtfs_dir: str | pathlib.Path, gtfs_rt_dir:
                 matches[gtfs_file][date].append(pathlib.Path(gtfs_rt_dir/gtfs_rt_name))
                 break
 
+    # Return only GTFS files with matched GTFS-RT files
     matches = {key: value for key, value in matches.items() if len(value) > 0}
     return matches
 
 
-def trips_stop_delays(trips: str | list[str], gtfs_file: pathlib.Path, gtfs_rt_files: list[pathlib.Path]) -> dict[int, int] | dict[str, dict[int, int]]:
-    if isinstance(trips, str):
-        trips = [trips]
-
+def trips_stop_delays(trips: list[str], gtfs_file: pathlib.Path, gtfs_rt_files: list[pathlib.Path]) -> dict[str, dict[int, int | None]]:
     all_updates = {x: [] for x in trips}
     for rt_file in gtfs_rt_files:
         updates = reader.trip_updates(trips, rt_file)
-        if len(trips) == 1:
-            all_updates[trips[0]] += updates
-        else:
-            for trip in trips:
-                all_updates[trip] += updates[trip]
+        for trip in trips:
+            all_updates[trip] += updates[trip]
 
     trip_stop_ids = reader.trips_to_stops(trips, gtfs_file)
     trip_stop_delays = {}
     for trip in trips:
         stop_ids = trip_stop_ids[trip]
         updates = all_updates[trip]
-        if len(updates) > 0:
-            pass
         stop_updates = {x: [] for x in stop_ids}
         for update in updates:
             stop_sequence = update["next_stop"]
@@ -61,23 +54,12 @@ def trips_stop_delays(trips: str | list[str], gtfs_file: pathlib.Path, gtfs_rt_f
             stop_updates[stop_id].append(update)
         stop_delays = {key: (max(value, key=lambda x: x["timestamp"])["delay"] if len(value) > 0 else None) for key, value in stop_updates.items()}
         trip_stop_delays[trip] = stop_delays
-
-    if len(trips) == 1:
-        return trip_stop_delays[trips[0]]
-    else:
-        return trip_stop_delays
+    return trip_stop_delays
 
 
-def routes_stop_delays(routes: str | list[str], gtfs: pathlib.Path, gtfs_rt: list[pathlib.Path]) -> dict[int, int] | dict[str, dict[int, int]]:
-    if isinstance(routes, str):
-        routes = [routes]
-
+def routes_stop_delays(routes: list[str], gtfs: pathlib.Path, gtfs_rt: list[pathlib.Path]) -> dict[str, dict[str, dict[int, int | None]]]:
     results = {}
     for route in routes:
-        trips = reader.routes_to_trips(route, gtfs)
+        trips = reader.routes_to_trips([route], gtfs)[route]
         results[route] = trips_stop_delays(trips, gtfs, gtfs_rt)
-
-    if len(routes) == 1:
-        return results[routes[0]]
-    else:
-        return results
+    return results
