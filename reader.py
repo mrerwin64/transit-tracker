@@ -28,7 +28,7 @@ def gtfs_to_list(gtfs_path: str | pathlib.Path, filename: str) -> list:
                 file = io.TextIOWrapper(bin_file, encoding="utf-8")
                 csv_reader = list(csv.reader(file))
     elif gtfs_path.is_dir():  # Assume GTFS data is provided as an already extracted zip archive
-        with open(gtfs_path/filename, "r") as file:
+        with open(gtfs_path/filename, "r", encoding="utf-8") as file:
             csv_reader = list(csv.reader(file))
     else:
         raise Exception("Invalid GTFS data")
@@ -39,7 +39,7 @@ def gtfs_rt_to_dict(feed_path: str | pathlib.Path) -> dict:
     """Return a GTFS-RT file (protobuf or JSON) as a dictionary."""
     feed_file = pathlib.Path(feed_path)
     if feed_file.suffix == ".json":
-        with open(feed_file, "r") as file:
+        with open(feed_file, "r", encoding="utf-8") as file:
             feed = json.load(file)
     elif feed_file.suffix in (".pb", ""):
         feed = pb_to_dict(feed_file)
@@ -93,19 +93,20 @@ def routes_to_trips(routes: list[str], gtfs_path: str | pathlib.Path) -> dict[st
     return trips
 
 
-def trips_to_stops(trips: list[str], gtfs_path: str | pathlib.Path) -> dict[str, list[tuple[int, time]]]:
+def trips_to_stops(trips: list[str], gtfs_path: str | pathlib.Path) -> dict[str, list[tuple[int, time, int]]]:
     """Return all stops of a trip, in order, for multiple trips.
 
     Returns:
-        Dictionary mapping lists of tuples (stop_id, stop_time) to given trip_ids
+        Dictionary mapping lists of tuples (stop_id, stop_time, stop_sequence) to given trip_ids
     """
     stop_times_txt = gtfs_to_list(gtfs_path, "stop_times.txt")
     stops = {x: [] for x in trips}
     for line in stop_times_txt[1:]:
         trip = line[0]
         if trip in trips:
-            stop = (int(line[3]), datetime.strptime(line[2], "%H:%M:%S").time())
+            stop = (int(line[3]), datetime.strptime(line[2], "%H:%M:%S").time(), int(line[4]))
             stops[trip].append(stop)
+            stops[trip].sort(key=lambda x: x[2])
     return stops
 
 

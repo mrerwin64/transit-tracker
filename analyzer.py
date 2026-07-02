@@ -55,15 +55,17 @@ def trips_stop_delays(trips: list[str], gtfs_file: pathlib.Path, gtfs_rt_files: 
         for trip in trips:
             all_updates[trip] += updates[trip]
 
-    trip_stop_ids = {key: [x[0] for x in value] for key, value in reader.trips_to_stops(trips, gtfs_file).items()}
+    trip_stops = reader.trips_to_stops(trips, gtfs_file)
+    trip_stop_id_by_sequence = {key: {x[2]: x[0] for x in value} for key, value in trip_stops.items()}
     trip_stop_delays = {}
     for trip in trips:
-        stop_ids = trip_stop_ids[trip]
+        stop_ids = [x[0] for x in trip_stops[trip]]
+        stop_id_by_sequence = trip_stop_id_by_sequence[trip]
         updates = all_updates[trip]
         stop_updates = {x: [] for x in stop_ids}
         for update in updates:
             stop_sequence = update["next_stop"]
-            stop_id = stop_ids[stop_sequence]
+            stop_id = stop_id_by_sequence[stop_sequence]
             stop_updates[stop_id].append(update)
         stop_delays = {key: (max(value, key=lambda x: x["timestamp"])["delay"] if len(value) > 0 else None) for key, value in stop_updates.items()}
         trip_stop_delays[trip] = stop_delays
