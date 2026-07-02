@@ -1,3 +1,11 @@
+"""Polls ZTM Poznan for GTFS and GTFS-RT data and archives it to disk.
+
+Runs as a long-lived process: periodically checks for a new GTFS static archive,
+downloads GTFS-RT snapshots, and tracks per-file metadata (validity range, record
+count) for the archive. Configuration can be overridden via an optional
+downloader_config.py module.
+"""
+
 # Modules
 from signal import signal, SIGINT, SIGTERM
 from datetime import datetime
@@ -22,6 +30,21 @@ POLLING_INTERVAL = 60
 # Functions
 log_cache = []
 def log(message: str, level="INFO", timestamp=True, console=True, file=True, verbose=False):
+    """Write a log entry to the console and/or logfile.
+
+    Entries are buffered in memory and flushed to LOGFILE_PATH once LOG_BUFFER_SIZE
+    entries have accumulated, or immediately once shutdown has been requested.
+
+    Args:
+        message: The text to log.
+        level: Severity tag prefixed to the entry (e.g. "INFO", "WARNING", "ERROR").
+            Pass "" to omit it.
+        timestamp: Whether to prefix the entry with the current local time.
+        console: Whether to print the entry to stdout.
+        file: Whether to buffer the entry for writing to LOGFILE_PATH.
+        verbose: If True, the entry is suppressed unless the module-level VERBOSE
+            flag is set.
+    """
     global log_cache
 
     if verbose and not VERBOSE:
@@ -50,6 +73,16 @@ def log(message: str, level="INFO", timestamp=True, console=True, file=True, ver
 shutting_down = False
 stop_event = threading.Event()
 def shutdown(signum, frame):
+    """Signal handler that requests a graceful shutdown.
+
+    Sets the shutting_down flag and stop_event so in-progress waits/retries exit
+    early and run_polling_loop() stops after its current iteration.
+
+    Args:
+        signum: The signal number that triggered the handler (e.g. SIGINT, SIGTERM).
+        frame: The current stack frame; unused, required by the signal handler
+            signature.
+    """
     global shutting_down
     shutting_down = True
     stop_event.set()
@@ -57,6 +90,18 @@ def shutdown(signum, frame):
 
 
 def load_constants():
+    """Reload module constants from downloader_config.py, if present.
+
+    Only keys already defined as module-level constants are considered; each is
+    overwritten in place when its value in downloader_config differs from the
+    current one.
+
+    Returns:
+        Tuple of (success, detail):
+            - (True, changes) where changes is the number of constants that were
+              updated.
+            - (False, exception) if downloader_config.py could not be imported.
+    """
     global GTFS_URL, GTFS_RT_URL, GTFS_RT_DYNAMIC_FILES, GTFS_RT_STATIC_FILES, ARCHIVE_PATH, LOGFILE_PATH, VERBOSE, LOG_BUFFER_SIZE, POLLING_INTERVAL
 
     try:
@@ -89,6 +134,20 @@ def load_constants():
 
 
 def get_latest_gtfs_filename(is_retry=False):
+    """Fetch the filename of the current GTFS archive without downloading it.
+
+    Issues a HEAD request and reads the filename from the Content-Disposition
+    header. On failure, retries once after a 5 second delay.
+
+    Args:
+        is_retry: Internal flag marking this call as the single automatic retry;
+            callers should not set this themselves.
+
+    Returns:
+        Tuple of (success, detail):
+            - (True, filename) on success.
+            - (False, exception) if the request and its retry both failed.
+    """
     try:
         response = requests.head(GTFS_URL, timeout=5)
         content_disposition = response.headers.get('Content-Disposition')
@@ -107,6 +166,20 @@ def get_latest_gtfs_filename(is_retry=False):
 
 
 def download_gtfs_archive(is_retry=False):
+    """Download the current GTFS archive and save it under ARCHIVE_PATH.
+
+    Creates an accompanying metadata JSON file for the archive if one doesn't
+    already exist. On failure, retries once after a 10 second delay.
+
+    Args:
+        is_retry: Internal flag marking this call as the single automatic retry;
+            callers should not set this themselves.
+
+    Returns:
+        Tuple of (success, detail):
+            - (True, filename) on success.
+            - (False, exception) if the download and its retry both failed.
+    """
     try:
         response = requests.get(GTFS_URL, timeout=15)
         content_disposition = response.headers.get("Content-Disposition")
@@ -130,6 +203,28 @@ def download_gtfs_archive(is_retry=False):
 
 
 def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_retry=False):
+    """Download a single GTFS-RT file and save it if its contents changed.
+
+    Compares the downloaded content against the most recently saved file of the
+    same kind; if identical, the file is not rewritten. For static files, also
+    creates a metadata JSON file alongside the first saved copy. On failure,
+    retries once after a 5 second delay.
+
+    Args:
+        remote_name: Name of the file as exposed by GTFS_RT_URL (e.g.
+            "trip_updates.pb").
+        local_name: Filename to save the downloaded content under.
+        static: Whether the file is one of GTFS_RT_STATIC_FILES (saved under
+            gtfs-rt/static/) rather than GTFS_RT_DYNAMIC_FILES (gtfs-rt/dynamic/).
+        is_retry: Internal flag marking this call as the single automatic retry;
+            callers should not set this themselves.
+
+    Returns:
+        Tuple of (success, detail):
+            - (True, changed) where changed indicates whether the content
+              differed from the previously saved file.
+            - (False, exception) if the download and its retry both failed.
+    """
     try:
         response = requests.get(GTFS_RT_URL+"?file="+remote_name, timeout=5)
         if static:
@@ -158,6 +253,14 @@ def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_re
 
 
 def create_metadata_file(path: str, timestamp=False):
+    """Create a fresh metadata JSON file for an archived GTFS/GTFS-RT file.
+
+    Args:
+        path: Path to write the metadata file to.
+        timestamp: Whether to record the current time as a "timestamp" field.
+            Used for GTFS archives, which have no filename-derived timestamp
+            (unlike GTFS-RT files, whose local_name already encodes one).
+    """
     dictionary = {
         "first_valid": None,
         "last_valid": None,
@@ -170,6 +273,20 @@ def create_metadata_file(path: str, timestamp=False):
 
 
 def update_metadata(filename: str):
+    """Record a newly downloaded GTFS-RT filename in the latest metadata file of each tracked archive.
+
+    Updates the most recent metadata JSON file for the current GTFS archive and
+    for each static GTFS-RT file, setting first_valid on first use, last_valid to
+    filename, and incrementing record_count.
+
+    Args:
+        filename: Local filename (timestamp) of the GTFS-RT snapshot just downloaded.
+
+    Returns:
+        Tuple of (success, detail):
+            - (True, count) where count is the number of metadata files updated.
+            - (False, exception) if updating any metadata file failed.
+    """
     try:
         gtfs_dir = pathlib.Path(ARCHIVE_PATH+"gtfs/")
         static_gtfs_rt_dirs = list(pathlib.Path(ARCHIVE_PATH+"gtfs-rt/"+"static/").iterdir())
@@ -198,6 +315,17 @@ def update_metadata(filename: str):
 
 
 def prepare_directory_structure():
+    """Create the archive directory tree, removing any files that occupy expected directory paths.
+
+    Ensures ARCHIVE_PATH and its gtfs/, gtfs-rt/dynamic/, and gtfs-rt/static/
+    subdirectories exist, along with a subdirectory for each configured GTFS-RT
+    file.
+
+    Returns:
+        Tuple of (success, detail):
+            - (True, None) on success.
+            - (False, exception) if directory creation failed.
+    """
     archive_path = pathlib.Path(ARCHIVE_PATH)
     gtfs_path = archive_path/"gtfs/"
     gtfs_rt_path = archive_path/"gtfs-rt/"
@@ -220,16 +348,23 @@ def prepare_directory_structure():
 
 
 def setup_signal_handlers():
+    """Register shutdown() as the handler for SIGINT and SIGTERM."""
     signal(SIGINT, shutdown)
     signal(SIGTERM, shutdown)
 
 
 def initialize_logs():
+    """Write a blank line and a startup banner to the logfile, marking a new run."""
     log("", level="", timestamp=False, console=False)
     log("#"*20 + " STARTING DOWNLOADER " + "#"*20, level="", console=False)
 
 
 def load_configuration():
+    """Load downloader_config.py if present and log the outcome.
+
+    Applies overrides via load_constants() and logs how many parameters changed,
+    or a warning if no config file was found or loading failed.
+    """
     if pathlib.Path("downloader_config.py").is_file():
         status = load_constants()
         if status[0]:
@@ -241,6 +376,7 @@ def load_configuration():
 
 
 def initialize_directories():
+    """Prepare the archive directory structure and log the outcome."""
     status = prepare_directory_structure()
     if status[0]:
         log("Successfully prepared archive directory structure")
@@ -249,6 +385,11 @@ def initialize_directories():
 
 
 def check_and_download_gtfs_data():
+    """Download a new GTFS archive if the remote filename differs from the latest local copy.
+
+    Falls back to always attempting a download if the remote filename couldn't
+    be determined.
+    """
     status = get_latest_gtfs_filename()
     if not status[0]:
         log(f"Failed to get latest GTFS data filename: {status[1]}", level="WARNING")
@@ -272,6 +413,12 @@ def check_and_download_gtfs_data():
 
 
 def download_gtfs_rt_data():
+    """Download one GTFS-RT snapshot: all static files, then all dynamic files.
+
+    All files downloaded in this call share the same local_name timestamp. After
+    downloading, updates the metadata for the current GTFS archive and each
+    static GTFS-RT file via update_metadata().
+    """
     local_name = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 
     # Static files
@@ -305,6 +452,12 @@ def download_gtfs_rt_data():
 
 
 def run_polling_loop():
+    """Repeatedly check for new GTFS data and download GTFS-RT snapshots until shutdown.
+
+    Each iteration runs check_and_download_gtfs_data() and download_gtfs_rt_data(),
+    then sleeps for the remainder of POLLING_INTERVAL (or not at all if the
+    iteration took longer than that).
+    """
     while not shutting_down:
         start_time = datetime.now()
 
@@ -317,6 +470,7 @@ def run_polling_loop():
 
 
 def main():
+    """Entry point: set up signal handling, logging, config and directories, then poll until shutdown."""
     setup_signal_handlers()
     initialize_logs()
     load_configuration()

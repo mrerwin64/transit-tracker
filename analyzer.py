@@ -1,3 +1,9 @@
+"""Combines GTFS static archives with GTFS-RT feeds to derive stop delays.
+
+Matches archived GTFS-RT snapshots to the GTFS archive that was current when they
+were downloaded, then correlates the two to compute per-stop delays for trips/routes.
+"""
+
 from datetime import datetime, date
 import pathlib
 import reader
@@ -5,6 +11,15 @@ import reader
 
 def match_gtfs_archives_with_rt_files(gtfs_dir: str | pathlib.Path, gtfs_rt_dir: str | pathlib.Path) -> dict[pathlib.Path, dict[date, list[pathlib.Path]]]:
     """Match GTFS archives with GTFS-RT files and group them by date.
+
+    A GTFS-RT file is matched to the newest GTFS archive whose date (encoded in
+    its filename) it postdates.
+
+    Args:
+        gtfs_dir: Directory containing GTFS zip archives, each named with a
+            YYYYMMDD-prefixed date.
+        gtfs_rt_dir: Directory containing GTFS-RT files, each named
+            "%Y-%m-%dT%H-%M-%S".
 
     Returns:
         Dictionary mapping GTFS-RT files grouped by date to GTFS archives.
@@ -42,7 +57,14 @@ def match_gtfs_archives_with_rt_files(gtfs_dir: str | pathlib.Path, gtfs_rt_dir:
 
 
 def trips_stop_delays(trips: list[str], gtfs_file: pathlib.Path, gtfs_rt_files: list[pathlib.Path]) -> dict[str, dict[int, int | None]]:
-    """Return delays for each stop of each given route.
+    """Return delays for each stop of each given trip.
+
+    Args:
+        trips: List of trip_ids to compute stop delays for.
+        gtfs_file: Path to the GTFS archive defining the trips' stop sequences.
+        gtfs_rt_files: List of GTFS-RT trip_updates feeds to pull delay data from.
+            For each stop, the most recent update (by timestamp) across all files
+            is used.
 
     Returns:
         Dictionary mapping dictionaries of stop_ids and their delays to trip_ids.
@@ -73,7 +95,17 @@ def trips_stop_delays(trips: list[str], gtfs_file: pathlib.Path, gtfs_rt_files: 
 
 
 def routes_stop_delays(routes: list[str], gtfs: pathlib.Path, gtfs_rt: list[pathlib.Path]) -> dict[str, dict[str, dict[int, int | None]]]:
-    """Returns trips_stop_delays() for each given route."""
+    """Return trips_stop_delays() results for each given route.
+
+    Args:
+        routes: List of route_ids to compute stop delays for.
+        gtfs: Path to the GTFS archive defining each route's trips and stop sequences.
+        gtfs_rt: List of GTFS-RT trip_updates feeds to pull delay data from.
+
+    Returns:
+        Dictionary mapping trips_stop_delays() results (trip_id -> stop_id -> delay)
+        to each route_id.
+    """
     results = {}
     for route in routes:
         trips = reader.routes_to_trips([route], gtfs)[route]
