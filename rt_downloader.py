@@ -239,7 +239,7 @@ def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_re
             target_path = pathlib.Path(ARCHIVE_PATH+"gtfs-rt/static/"+remote_name+"/")
         else:
             target_path = pathlib.Path(ARCHIVE_PATH+"gtfs-rt/dynamic/"+remote_name+"/")
-        previous_files = list(filter(lambda x: x.suffix == "", target_path.iterdir()))
+        previous_files = list(target_path.iterdir())
         changed = False
         if len(previous_files) == 0 or max(previous_files, key=str).read_bytes() != response.content:
             changed = True
