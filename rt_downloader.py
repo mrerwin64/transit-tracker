@@ -1,9 +1,7 @@
-"""Polls ZTM Poznan for GTFS and GTFS-RT data and archives it to disk.
+"""Polls ZTM Poznan for GTFS-RT data and archives it to disk.
 
-Runs as a long-lived process: periodically checks for a new GTFS static archive,
-downloads GTFS-RT snapshots, and tracks per-file metadata (validity range, record
-count) for the archive. Configuration can be overridden via an optional
-downloader_config.py module.
+Runs as a long-lived process: periodically downloads GTFS-RT snapshots.
+Configuration can be overridden via an optional downloader_config.py module.
 """
 
 # Modules
@@ -12,11 +10,9 @@ from datetime import datetime
 import threading
 import requests
 import pathlib
-import json
 
 
 # Constant defaults
-GTFS_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGTFSFile"
 GTFS_RT_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGtfsRtFile"
 GTFS_RT_DYNAMIC_FILES = ["feeds.pb", "trip_updates.pb", "vehicle_positions.pb"]
 GTFS_RT_STATIC_FILES = ["vehicle_dictionary.csv"]
@@ -98,7 +94,7 @@ def load_constants():
               updated.
             - (False, exception) if downloader_config.py could not be imported.
     """
-    global GTFS_URL, GTFS_RT_URL, GTFS_RT_DYNAMIC_FILES, GTFS_RT_STATIC_FILES, ARCHIVE_PATH, LOGFILE_PATH, VERBOSE, LOG_BUFFER_SIZE, POLLING_INTERVAL
+    global GTFS_RT_URL, GTFS_RT_DYNAMIC_FILES, GTFS_RT_STATIC_FILES, ARCHIVE_PATH, LOGFILE_PATH, VERBOSE, LOG_BUFFER_SIZE, POLLING_INTERVAL
 
     try:
         import downloader_config as cfg
@@ -106,7 +102,6 @@ def load_constants():
         return False, e
 
     keys = [
-        "GTFS_URL",
         "GTFS_RT_URL",
         "GTFS_RT_DYNAMIC_FILES",
         "GTFS_RT_STATIC_FILES",
@@ -141,7 +136,7 @@ def initialize_directories():
 def prepare_directory_structure():
     """Create the archive directory tree, removing any files that occupy expected directory paths.
 
-    Ensures ARCHIVE_PATH and its gtfs/, gtfs-rt/dynamic/, and gtfs-rt/static/
+    Ensures ARCHIVE_PATH and its gtfs-rt/dynamic/ and gtfs-rt/static/
     subdirectories exist, along with a subdirectory for each configured GTFS-RT
     file.
 
@@ -151,13 +146,12 @@ def prepare_directory_structure():
             - (False, exception) if directory creation failed.
     """
     archive_path = pathlib.Path(ARCHIVE_PATH)
-    gtfs_path = archive_path/"gtfs/"
     gtfs_rt_path = archive_path/"gtfs-rt/"
     gtfs_rt_dynamic_path = archive_path/"gtfs-rt"/"dynamic/"
     gtfs_rt_static_path = archive_path/"gtfs-rt"/"static/"
     gtfs_rt_dynamic_file_paths = [archive_path/"gtfs-rt"/"dynamic"/x for x in GTFS_RT_DYNAMIC_FILES]
     gtfs_rt_static_file_paths = [archive_path/"gtfs-rt"/"static"/x for x in GTFS_RT_STATIC_FILES]
-    required_paths = [archive_path, gtfs_path, gtfs_rt_path, gtfs_rt_dynamic_path, gtfs_rt_static_path] + gtfs_rt_dynamic_file_paths + gtfs_rt_static_file_paths
+    required_paths = [archive_path, gtfs_rt_path, gtfs_rt_dynamic_path, gtfs_rt_static_path] + gtfs_rt_dynamic_file_paths + gtfs_rt_static_file_paths
 
     try:
         for path in required_paths:
@@ -172,126 +166,25 @@ def prepare_directory_structure():
 
 
 def run_polling_loop():
-    """Repeatedly check for new GTFS data and download GTFS-RT snapshots until shutdown.
+    """Repeatedly download GTFS-RT snapshots until shutdown.
 
-    Each iteration runs check_and_download_gtfs_data() and download_gtfs_rt_data(),
-    then sleeps for the remainder of POLLING_INTERVAL (or not at all if the
-    iteration took longer than that).
+    Each iteration runs download_gtfs_rt_data(), then sleeps for the remainder
+    of POLLING_INTERVAL (or not at all if the iteration took longer than that).
     """
     while not shutting_down:
         start_time = datetime.now()
 
         log("#"*10 + " RUNNING POLLING LOOP " + "#"*10, verbose=True)
-        check_and_download_gtfs_data()
         download_gtfs_rt_data()
 
         elapsed = (datetime.now() - start_time).total_seconds()
         stop_event.wait(timeout=max(0.0, POLLING_INTERVAL-elapsed))
 
 
-def check_and_download_gtfs_data():
-    """Download a new GTFS archive if the remote filename differs from the latest local copy.
-
-    Falls back to always attempting a download if the remote filename couldn't
-    be determined.
-    """
-    status = get_latest_gtfs_filename()
-    if not status[0]:
-        log(f"Failed to get latest GTFS data filename: {status[1]}", level="WARNING")
-        remote_latest = ""
-    else:
-        remote_latest = status[1]
-
-    gtfs_path = pathlib.Path(ARCHIVE_PATH+"gtfs/")
-    gtfs_files = list(filter(lambda x: x.suffix == ".zip", gtfs_path.iterdir()))
-    if len(gtfs_files) == 0 or max(gtfs_files, key=str).parts[-1] != remote_latest:
-        if len(remote_latest) > 0:
-            log("Found new GTFS data")
-
-        status = download_gtfs_archive()
-        if status[0]:
-            log(f"Successfully downloaded GTFS data: {status[1]}")
-        else:
-            log(f"Failed to download GTFS data: {status[1]}", level="WARNING")
-    else:
-        log("No new GTFS data available", verbose=True)
-
-
-def get_latest_gtfs_filename(is_retry=False):
-    """Fetch the filename of the current GTFS archive without downloading it.
-
-    Issues a HEAD request and reads the filename from the Content-Disposition
-    header. On failure, retries once after a 5 second delay.
-
-    Args:
-        is_retry: Internal flag marking this call as the single automatic retry;
-            callers should not set this themselves.
-
-    Returns:
-        Tuple of (success, detail):
-            - (True, filename) on success.
-            - (False, exception) if the request and its retry both failed.
-    """
-    try:
-        response = requests.head(GTFS_URL, timeout=5)
-        content_disposition = response.headers.get('Content-Disposition')
-        filename = content_disposition.split()[1][10:-1]
-
-        if is_retry:
-            log("Retry successful")
-        return True, filename
-    except Exception as e:
-        if not is_retry:
-            log("Failed to get latest GTFS archive filename, retrying in 5 seconds", level="WARNING")
-            stop_event.wait(timeout=5)
-            return get_latest_gtfs_filename(is_retry=True)
-        else:
-            return False, e
-
-
-def download_gtfs_archive(is_retry=False):
-    """Download the current GTFS archive and save it under ARCHIVE_PATH.
-
-    Creates an accompanying metadata JSON file for the archive if one doesn't
-    already exist. On failure, retries once after a 10 second delay.
-
-    Args:
-        is_retry: Internal flag marking this call as the single automatic retry;
-            callers should not set this themselves.
-
-    Returns:
-        Tuple of (success, detail):
-            - (True, filename) on success.
-            - (False, exception) if the download and its retry both failed.
-    """
-    try:
-        response = requests.get(GTFS_URL, timeout=15)
-        content_disposition = response.headers.get("Content-Disposition")
-        filename = content_disposition.split()[1][10:-1]
-        with open(ARCHIVE_PATH+"gtfs/"+filename, "wb") as file:
-            file.write(response.content)
-        metadata_path = ARCHIVE_PATH+"gtfs/"+filename+".json"
-        if not pathlib.Path(metadata_path).is_file():
-            create_metadata_file(metadata_path, timestamp=True)
-
-        if is_retry:
-            log("Retry successful")
-        return True, filename
-    except Exception as e:
-        if not is_retry:
-            log("Failed to download GTFS data, retrying in 10 seconds", level="WARNING")
-            stop_event.wait(timeout=10)
-            return download_gtfs_archive(is_retry=True)
-        else:
-            return False, e
-
-
 def download_gtfs_rt_data():
     """Download one GTFS-RT snapshot: all static files, then all dynamic files.
 
-    All files downloaded in this call share the same local_name timestamp. After
-    downloading, updates the metadata for the current GTFS archive and each
-    static GTFS-RT file via update_metadata().
+    All files downloaded in this call share the same local_name timestamp.
     """
     local_name = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 
@@ -317,21 +210,13 @@ def download_gtfs_rt_data():
         else:
             log(f"Failed to download dynamic GTFS-RT file {remote_name}: {status[1]}", level="WARNING")
 
-    # Update GTFS and static GTFS-RT file metadata
-    status = update_metadata(local_name)
-    if status[0]:
-        log(f"Successfully updated metadata for {status[1]} files", verbose=True)
-    else:
-        log(f"Failed to update metadata: {status[1]}", level="ERROR")
-
 
 def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_retry=False):
     """Download a single GTFS-RT file and save it if its contents changed.
 
     Compares the downloaded content against the most recently saved file of the
-    same kind; if identical, the file is not rewritten. For static files, also
-    creates a metadata JSON file alongside the first saved copy. On failure,
-    retries once after a 5 second delay.
+    same kind; if identical, the file is not rewritten. On failure, retries once
+    after a 5-second delay.
 
     Args:
         remote_name: Name of the file as exposed by GTFS_RT_URL (e.g.
@@ -358,8 +243,6 @@ def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_re
         changed = False
         if len(previous_files) == 0 or max(previous_files, key=str).read_bytes() != response.content:
             changed = True
-            if static:
-                create_metadata_file(ARCHIVE_PATH+"gtfs-rt/static/"+remote_name+"/"+local_name+".json")
             with (target_path/local_name).open("wb") as new_file:
                 new_file.write(response.content)
 
@@ -373,68 +256,6 @@ def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_re
             return download_gtfs_rt_file(remote_name, local_name, static, is_retry=True)
         else:
             return False, e
-
-
-def create_metadata_file(path: str, timestamp=False):
-    """Create a fresh metadata JSON file for an archived GTFS/GTFS-RT file.
-
-    Args:
-        path: Path to write the metadata file to.
-        timestamp: Whether to record the current time as a "timestamp" field.
-            Used for GTFS archives, which have no filename-derived timestamp
-            (unlike GTFS-RT files, whose local_name already encodes one).
-    """
-    dictionary = {
-        "first_valid": None,
-        "last_valid": None,
-        "record_count": 0
-    }
-    if timestamp:
-        dictionary["timestamp"] = int(datetime.now().timestamp())
-    with open(path, "w") as file:
-        json.dump(dictionary, file, indent=2)
-
-
-def update_metadata(filename: str):
-    """Record a newly downloaded GTFS-RT filename in the latest metadata file of each tracked archive.
-
-    Updates the most recent metadata JSON file for the current GTFS archive and
-    for each static GTFS-RT file, setting first_valid on first use, last_valid to
-    filename, and incrementing record_count.
-
-    Args:
-        filename: Local filename (timestamp) of the GTFS-RT snapshot just downloaded.
-
-    Returns:
-        Tuple of (success, detail):
-            - (True, count) where count is the number of metadata files updated.
-            - (False, exception) if updating any metadata file failed.
-    """
-    try:
-        gtfs_dir = pathlib.Path(ARCHIVE_PATH+"gtfs/")
-        static_gtfs_rt_dirs = list(pathlib.Path(ARCHIVE_PATH+"gtfs-rt/"+"static/").iterdir())
-
-        paths = []
-        for directory in [gtfs_dir] + static_gtfs_rt_dirs:
-            json_files = list(filter(lambda x: x.suffix == ".json", directory.iterdir()))
-            latest_file = max(json_files)
-            paths.append(latest_file)
-
-        for path in paths:
-            with open(path, "r+") as file:
-                dictionary = json.load(file)
-                if dictionary["first_valid"] is None:
-                    dictionary["first_valid"] = filename
-                dictionary["last_valid"] = filename
-                dictionary["record_count"] += 1
-
-                file.seek(0)
-                file.truncate()
-                json.dump(dictionary, file, indent=2)
-
-        return True, len(paths)
-    except Exception as e:
-        return False, e
 
 
 log_cache = []
