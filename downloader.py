@@ -28,46 +28,20 @@ POLLING_INTERVAL = 60
 
 
 # Functions
-log_cache = []
-def log(message: str, level="INFO", timestamp=True, console=True, file=True, verbose=False):
-    """Write a log entry to the console and/or logfile.
+def main():
+    """Entry point: set up signal handling, logging, config and directories, then poll until shutdown."""
+    setup_signal_handlers()
+    initialize_logs()
+    load_configuration()
+    initialize_directories()
+    run_polling_loop()
+    log("Cleanup complete")
 
-    Entries are buffered in memory and flushed to LOGFILE_PATH once LOG_BUFFER_SIZE
-    entries have accumulated, or immediately once shutdown has been requested.
 
-    Args:
-        message: The text to log.
-        level: Severity tag prefixed to the entry (e.g. "INFO", "WARNING", "ERROR").
-            Pass "" to omit it.
-        timestamp: Whether to prefix the entry with the current local time.
-        console: Whether to print the entry to stdout.
-        file: Whether to buffer the entry for writing to LOGFILE_PATH.
-        verbose: If True, the entry is suppressed unless the module-level VERBOSE
-            flag is set.
-    """
-    global log_cache
-
-    if verbose and not VERBOSE:
-        return
-
-    entry = ""
-    if level != "":
-        entry += f"[{level}]"
-    if timestamp:
-        entry += f"[{datetime.now().replace(microsecond=0).isoformat().replace('T', ' ')}]"
-    if len(entry) > 0:
-        entry += ": "
-    entry += message
-
-    if console:
-        print(entry)
-
-    if file:
-        log_cache.append(entry+"\n")
-        if len(log_cache) >= LOG_BUFFER_SIZE or shutting_down:
-            with open(LOGFILE_PATH, "a") as file:
-                file.writelines(log_cache)
-                log_cache.clear()
+def setup_signal_handlers():
+    """Register shutdown() as the handler for SIGINT and SIGTERM."""
+    signal(SIGINT, shutdown)
+    signal(SIGTERM, shutdown)
 
 
 shutting_down = False
@@ -87,6 +61,28 @@ def shutdown(signum, frame):
     shutting_down = True
     stop_event.set()
     log(f"Received signal {signum}, shutting down")
+
+
+def initialize_logs():
+    """Write a blank line and a startup banner to the logfile, marking a new run."""
+    log("", level="", timestamp=False, console=False)
+    log("#"*20 + " STARTING DOWNLOADER " + "#"*20, level="", console=False)
+
+
+def load_configuration():
+    """Load downloader_config.py if present and log the outcome.
+
+    Applies overrides via load_constants() and logs how many parameters changed,
+    or a warning if no config file was found or loading failed.
+    """
+    if pathlib.Path("downloader_config.py").is_file():
+        status = load_constants()
+        if status[0]:
+            log(f"Successfully loaded config file - {status[1]} parameters modified")
+        else:
+            log(f"Failed to load config file: {status[1]}", level="WARNING")
+    else:
+        log("No config file found", level="WARNING")
 
 
 def load_constants():
@@ -131,6 +127,94 @@ def load_constants():
                 changes += 1
 
     return True, changes
+
+
+def initialize_directories():
+    """Prepare the archive directory structure and log the outcome."""
+    status = prepare_directory_structure()
+    if status[0]:
+        log("Successfully prepared archive directory structure")
+    else:
+        log(f"Failed to prepare archive directory structure: {status[1]}", level="ERROR")
+
+
+def prepare_directory_structure():
+    """Create the archive directory tree, removing any files that occupy expected directory paths.
+
+    Ensures ARCHIVE_PATH and its gtfs/, gtfs-rt/dynamic/, and gtfs-rt/static/
+    subdirectories exist, along with a subdirectory for each configured GTFS-RT
+    file.
+
+    Returns:
+        Tuple of (success, detail):
+            - (True, None) on success.
+            - (False, exception) if directory creation failed.
+    """
+    archive_path = pathlib.Path(ARCHIVE_PATH)
+    gtfs_path = archive_path/"gtfs/"
+    gtfs_rt_path = archive_path/"gtfs-rt/"
+    gtfs_rt_dynamic_path = archive_path/"gtfs-rt"/"dynamic/"
+    gtfs_rt_static_path = archive_path/"gtfs-rt"/"static/"
+    gtfs_rt_dynamic_file_paths = [archive_path/"gtfs-rt"/"dynamic"/x for x in GTFS_RT_DYNAMIC_FILES]
+    gtfs_rt_static_file_paths = [archive_path/"gtfs-rt"/"static"/x for x in GTFS_RT_STATIC_FILES]
+    required_paths = [archive_path, gtfs_path, gtfs_rt_path, gtfs_rt_dynamic_path, gtfs_rt_static_path] + gtfs_rt_dynamic_file_paths + gtfs_rt_static_file_paths
+
+    try:
+        for path in required_paths:
+            if not path.exists():
+                path.mkdir()
+            elif path.is_file():
+                path.unlink()
+                path.mkdir()
+        return True, None
+    except Exception as e:
+        return False, e
+
+
+def run_polling_loop():
+    """Repeatedly check for new GTFS data and download GTFS-RT snapshots until shutdown.
+
+    Each iteration runs check_and_download_gtfs_data() and download_gtfs_rt_data(),
+    then sleeps for the remainder of POLLING_INTERVAL (or not at all if the
+    iteration took longer than that).
+    """
+    while not shutting_down:
+        start_time = datetime.now()
+
+        log("#"*10 + " RUNNING POLLING LOOP " + "#"*10, verbose=True)
+        check_and_download_gtfs_data()
+        download_gtfs_rt_data()
+
+        elapsed = (datetime.now() - start_time).total_seconds()
+        stop_event.wait(timeout=max(0.0, POLLING_INTERVAL-elapsed))
+
+
+def check_and_download_gtfs_data():
+    """Download a new GTFS archive if the remote filename differs from the latest local copy.
+
+    Falls back to always attempting a download if the remote filename couldn't
+    be determined.
+    """
+    status = get_latest_gtfs_filename()
+    if not status[0]:
+        log(f"Failed to get latest GTFS data filename: {status[1]}", level="WARNING")
+        remote_latest = ""
+    else:
+        remote_latest = status[1]
+
+    gtfs_path = pathlib.Path(ARCHIVE_PATH+"gtfs/")
+    gtfs_files = list(filter(lambda x: x.suffix == ".zip", gtfs_path.iterdir()))
+    if len(gtfs_files) == 0 or max(gtfs_files, key=str).parts[-1] != remote_latest:
+        if len(remote_latest) > 0:
+            log("Found new GTFS data")
+
+        status = download_gtfs_archive()
+        if status[0]:
+            log(f"Successfully downloaded GTFS data: {status[1]}")
+        else:
+            log(f"Failed to download GTFS data: {status[1]}", level="WARNING")
+    else:
+        log("No new GTFS data available", verbose=True)
 
 
 def get_latest_gtfs_filename(is_retry=False):
@@ -200,6 +284,45 @@ def download_gtfs_archive(is_retry=False):
             return download_gtfs_archive(is_retry=True)
         else:
             return False, e
+
+
+def download_gtfs_rt_data():
+    """Download one GTFS-RT snapshot: all static files, then all dynamic files.
+
+    All files downloaded in this call share the same local_name timestamp. After
+    downloading, updates the metadata for the current GTFS archive and each
+    static GTFS-RT file via update_metadata().
+    """
+    local_name = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+
+    # Static files
+    for remote_name in GTFS_RT_STATIC_FILES:
+        status = download_gtfs_rt_file(remote_name, local_name, static=True)
+        if status[0]:
+            if status[1]:
+                log(f"Successfully downloaded updated static GTFS-RT file - {remote_name}")
+            else:
+                log(f"Successfully downloaded identical static GTFS-RT file - {remote_name}", verbose=True)
+        else:
+            log(f"Failed to download static GTFS-RT file {remote_name}: {status[1]}", level="WARNING")
+
+    # Dynamic files
+    for remote_name in GTFS_RT_DYNAMIC_FILES:
+        status = download_gtfs_rt_file(remote_name, local_name)
+        if status[0]:
+            if status[1]:
+                log(f"Successfully downloaded updated dynamic GTFS-RT file - {remote_name}", verbose=True)
+            else:
+                log(f"Successfully downloaded identical dynamic GTFS-RT file - {remote_name}")
+        else:
+            log(f"Failed to download dynamic GTFS-RT file {remote_name}: {status[1]}", level="WARNING")
+
+    # Update GTFS and static GTFS-RT file metadata
+    status = update_metadata(local_name)
+    if status[0]:
+        log(f"Successfully updated metadata for {status[1]} files", verbose=True)
+    else:
+        log(f"Failed to update metadata: {status[1]}", level="ERROR")
 
 
 def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_retry=False):
@@ -314,169 +437,46 @@ def update_metadata(filename: str):
         return False, e
 
 
-def prepare_directory_structure():
-    """Create the archive directory tree, removing any files that occupy expected directory paths.
+log_cache = []
+def log(message: str, level="INFO", timestamp=True, console=True, file=True, verbose=False):
+    """Write a log entry to the console and/or logfile.
 
-    Ensures ARCHIVE_PATH and its gtfs/, gtfs-rt/dynamic/, and gtfs-rt/static/
-    subdirectories exist, along with a subdirectory for each configured GTFS-RT
-    file.
+    Entries are buffered in memory and flushed to LOGFILE_PATH once LOG_BUFFER_SIZE
+    entries have accumulated, or immediately once shutdown has been requested.
 
-    Returns:
-        Tuple of (success, detail):
-            - (True, None) on success.
-            - (False, exception) if directory creation failed.
+    Args:
+        message: The text to log.
+        level: Severity tag prefixed to the entry (e.g. "INFO", "WARNING", "ERROR").
+            Pass "" to omit it.
+        timestamp: Whether to prefix the entry with the current local time.
+        console: Whether to print the entry to stdout.
+        file: Whether to buffer the entry for writing to LOGFILE_PATH.
+        verbose: If True, the entry is suppressed unless the module-level VERBOSE
+            flag is set.
     """
-    archive_path = pathlib.Path(ARCHIVE_PATH)
-    gtfs_path = archive_path/"gtfs/"
-    gtfs_rt_path = archive_path/"gtfs-rt/"
-    gtfs_rt_dynamic_path = archive_path/"gtfs-rt"/"dynamic/"
-    gtfs_rt_static_path = archive_path/"gtfs-rt"/"static/"
-    gtfs_rt_dynamic_file_paths = [archive_path/"gtfs-rt"/"dynamic"/x for x in GTFS_RT_DYNAMIC_FILES]
-    gtfs_rt_static_file_paths = [archive_path/"gtfs-rt"/"static"/x for x in GTFS_RT_STATIC_FILES]
-    required_paths = [archive_path, gtfs_path, gtfs_rt_path, gtfs_rt_dynamic_path, gtfs_rt_static_path] + gtfs_rt_dynamic_file_paths + gtfs_rt_static_file_paths
+    global log_cache
 
-    try:
-        for path in required_paths:
-            if not path.exists():
-                path.mkdir()
-            elif path.is_file():
-                path.unlink()
-                path.mkdir()
-        return True, None
-    except Exception as e:
-        return False, e
+    if verbose and not VERBOSE:
+        return
 
+    entry = ""
+    if level != "":
+        entry += f"[{level}]"
+    if timestamp:
+        entry += f"[{datetime.now().replace(microsecond=0).isoformat().replace('T', ' ')}]"
+    if len(entry) > 0:
+        entry += ": "
+    entry += message
 
-def setup_signal_handlers():
-    """Register shutdown() as the handler for SIGINT and SIGTERM."""
-    signal(SIGINT, shutdown)
-    signal(SIGTERM, shutdown)
+    if console:
+        print(entry)
 
-
-def initialize_logs():
-    """Write a blank line and a startup banner to the logfile, marking a new run."""
-    log("", level="", timestamp=False, console=False)
-    log("#"*20 + " STARTING DOWNLOADER " + "#"*20, level="", console=False)
-
-
-def load_configuration():
-    """Load downloader_config.py if present and log the outcome.
-
-    Applies overrides via load_constants() and logs how many parameters changed,
-    or a warning if no config file was found or loading failed.
-    """
-    if pathlib.Path("downloader_config.py").is_file():
-        status = load_constants()
-        if status[0]:
-            log(f"Successfully loaded config file - {status[1]} parameters modified")
-        else:
-            log(f"Failed to load config file: {status[1]}", level="WARNING")
-    else:
-        log("No config file found", level="WARNING")
-
-
-def initialize_directories():
-    """Prepare the archive directory structure and log the outcome."""
-    status = prepare_directory_structure()
-    if status[0]:
-        log("Successfully prepared archive directory structure")
-    else:
-        log(f"Failed to prepare archive directory structure: {status[1]}", level="ERROR")
-
-
-def check_and_download_gtfs_data():
-    """Download a new GTFS archive if the remote filename differs from the latest local copy.
-
-    Falls back to always attempting a download if the remote filename couldn't
-    be determined.
-    """
-    status = get_latest_gtfs_filename()
-    if not status[0]:
-        log(f"Failed to get latest GTFS data filename: {status[1]}", level="WARNING")
-        remote_latest = ""
-    else:
-        remote_latest = status[1]
-
-    gtfs_path = pathlib.Path(ARCHIVE_PATH+"gtfs/")
-    gtfs_files = list(filter(lambda x: x.suffix == ".zip", gtfs_path.iterdir()))
-    if len(gtfs_files) == 0 or max(gtfs_files, key=str).parts[-1] != remote_latest:
-        if len(remote_latest) > 0:
-            log("Found new GTFS data")
-
-        status = download_gtfs_archive()
-        if status[0]:
-            log(f"Successfully downloaded GTFS data: {status[1]}")
-        else:
-            log(f"Failed to download GTFS data: {status[1]}", level="WARNING")
-    else:
-        log("No new GTFS data available", verbose=True)
-
-
-def download_gtfs_rt_data():
-    """Download one GTFS-RT snapshot: all static files, then all dynamic files.
-
-    All files downloaded in this call share the same local_name timestamp. After
-    downloading, updates the metadata for the current GTFS archive and each
-    static GTFS-RT file via update_metadata().
-    """
-    local_name = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-
-    # Static files
-    for remote_name in GTFS_RT_STATIC_FILES:
-        status = download_gtfs_rt_file(remote_name, local_name, static=True)
-        if status[0]:
-            if status[1]:
-                log(f"Successfully downloaded updated static GTFS-RT file - {remote_name}")
-            else:
-                log(f"Successfully downloaded identical static GTFS-RT file - {remote_name}", verbose=True)
-        else:
-            log(f"Failed to download static GTFS-RT file {remote_name}: {status[1]}", level="WARNING")
-
-    # Dynamic files
-    for remote_name in GTFS_RT_DYNAMIC_FILES:
-        status = download_gtfs_rt_file(remote_name, local_name)
-        if status[0]:
-            if status[1]:
-                log(f"Successfully downloaded updated dynamic GTFS-RT file - {remote_name}", verbose=True)
-            else:
-                log(f"Successfully downloaded identical dynamic GTFS-RT file - {remote_name}")
-        else:
-            log(f"Failed to download dynamic GTFS-RT file {remote_name}: {status[1]}", level="WARNING")
-
-    # Update GTFS and static GTFS-RT file metadata
-    status = update_metadata(local_name)
-    if status[0]:
-        log(f"Successfully updated metadata for {status[1]} files", verbose=True)
-    else:
-        log(f"Failed to update metadata: {status[1]}", level="ERROR")
-
-
-def run_polling_loop():
-    """Repeatedly check for new GTFS data and download GTFS-RT snapshots until shutdown.
-
-    Each iteration runs check_and_download_gtfs_data() and download_gtfs_rt_data(),
-    then sleeps for the remainder of POLLING_INTERVAL (or not at all if the
-    iteration took longer than that).
-    """
-    while not shutting_down:
-        start_time = datetime.now()
-
-        log("#"*10 + " RUNNING POLLING LOOP " + "#"*10, verbose=True)
-        check_and_download_gtfs_data()
-        download_gtfs_rt_data()
-
-        elapsed = (datetime.now() - start_time).total_seconds()
-        stop_event.wait(timeout=max(0.0, POLLING_INTERVAL-elapsed))
-
-
-def main():
-    """Entry point: set up signal handling, logging, config and directories, then poll until shutdown."""
-    setup_signal_handlers()
-    initialize_logs()
-    load_configuration()
-    initialize_directories()
-    run_polling_loop()
-    log("Cleanup complete")
+    if file:
+        log_cache.append(entry+"\n")
+        if len(log_cache) >= LOG_BUFFER_SIZE or shutting_down:
+            with open(LOGFILE_PATH, "a") as file:
+                file.writelines(log_cache)
+                log_cache.clear()
 
 
 # Entry point
