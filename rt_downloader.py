@@ -42,7 +42,7 @@ def setup_signal_handlers():
 
 shutting_down = False
 stop_event = threading.Event()
-def shutdown(signum, frame):
+def shutdown(signum, _frame):
     """Signal handler that requests a graceful shutdown.
 
     Sets the shutting_down flag and stop_event so in-progress waits/retries exit
@@ -50,7 +50,7 @@ def shutdown(signum, frame):
 
     Args:
         signum: The signal number that triggered the handler (e.g. SIGINT, SIGTERM).
-        frame: The current stack frame; unused, required by the signal handler
+        _frame: The current stack frame; unused, required by the signal handler
             signature.
     """
     global shutting_down
