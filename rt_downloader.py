@@ -271,7 +271,7 @@ def log(message: str, level="INFO", timestamp=True, console=True, file=True, ver
             Pass "" to omit it.
         timestamp: Whether to prefix the entry with the current local time.
         console: Whether to print the entry to stdout.
-        file: Whether to buffer the entry for writing to LOGFILE_PATH.
+        file: Whether to write the entry to LOGFILE_PATH.
         verbose: If True, the entry is suppressed unless the module-level VERBOSE
             flag is set.
     """
@@ -295,8 +295,8 @@ def log(message: str, level="INFO", timestamp=True, console=True, file=True, ver
     if file:
         log_cache.append(entry+"\n")
         if len(log_cache) >= LOG_BUFFER_SIZE or shutting_down:
-            with open(LOGFILE_PATH, "a") as file:
-                file.writelines(log_cache)
+            with open(LOGFILE_PATH, "a") as f:
+                f.writelines(log_cache)
                 log_cache.clear()
 
 
