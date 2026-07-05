@@ -1,10 +1,7 @@
+/.claude/
 /.idea/
 /.venv/
-/pyproject.toml
-/uv.lock
+/__pycache__
 /archive/
 /downloader.log
 /downloader_config.py
-/__pycache__
-/human
-/update-vm.sh
