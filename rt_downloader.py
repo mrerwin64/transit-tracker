@@ -16,7 +16,7 @@ import pathlib
 GTFS_RT_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGtfsRtFile"
 GTFS_RT_DYNAMIC_FILES = ["feeds.pb", "trip_updates.pb", "vehicle_positions.pb"]
 GTFS_RT_STATIC_FILES = ["vehicle_dictionary.csv"]
-ARCHIVE_PATH = "archive/"
+ARCHIVE_PATH = "archive/gtfs-rt/"
 LOGFILE_PATH = "downloader.log"
 VERBOSE = True
 LOG_BUFFER_SIZE = 10
@@ -136,9 +136,8 @@ def initialize_directories():
 def prepare_directory_structure():
     """Create the archive directory tree, removing any files that occupy expected directory paths.
 
-    Ensures ARCHIVE_PATH and its gtfs-rt/dynamic/ and gtfs-rt/static/
-    subdirectories exist, along with a subdirectory for each configured GTFS-RT
-    file.
+    Ensures ARCHIVE_PATH and its dynamic/ and static/ subdirectories exist,
+    along with a subdirectory for each configured GTFS-RT file.
 
     Returns:
         Tuple of (success, detail):
@@ -146,12 +145,11 @@ def prepare_directory_structure():
             - (False, exception) if directory creation failed.
     """
     archive_path = pathlib.Path(ARCHIVE_PATH)
-    gtfs_rt_path = archive_path/"gtfs-rt/"
-    gtfs_rt_dynamic_path = archive_path/"gtfs-rt"/"dynamic/"
-    gtfs_rt_static_path = archive_path/"gtfs-rt"/"static/"
-    gtfs_rt_dynamic_file_paths = [archive_path/"gtfs-rt"/"dynamic"/x for x in GTFS_RT_DYNAMIC_FILES]
-    gtfs_rt_static_file_paths = [archive_path/"gtfs-rt"/"static"/x for x in GTFS_RT_STATIC_FILES]
-    required_paths = [archive_path, gtfs_rt_path, gtfs_rt_dynamic_path, gtfs_rt_static_path] + gtfs_rt_dynamic_file_paths + gtfs_rt_static_file_paths
+    gtfs_rt_dynamic_path = archive_path/"dynamic/"
+    gtfs_rt_static_path = archive_path/"static/"
+    gtfs_rt_dynamic_file_paths = [archive_path/"dynamic"/x for x in GTFS_RT_DYNAMIC_FILES]
+    gtfs_rt_static_file_paths = [archive_path/"static"/x for x in GTFS_RT_STATIC_FILES]
+    required_paths = [archive_path, gtfs_rt_dynamic_path, gtfs_rt_static_path] + gtfs_rt_dynamic_file_paths + gtfs_rt_static_file_paths
 
     try:
         for path in required_paths:
@@ -223,7 +221,7 @@ def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_re
             "trip_updates.pb").
         local_name: Filename to save the downloaded content under.
         static: Whether the file is one of GTFS_RT_STATIC_FILES (saved under
-            gtfs-rt/static/) rather than GTFS_RT_DYNAMIC_FILES (gtfs-rt/dynamic/).
+            static/) rather than GTFS_RT_DYNAMIC_FILES (dynamic/).
         is_retry: Internal flag marking this call as the single automatic retry;
             callers should not set this themselves.
 
@@ -236,9 +234,9 @@ def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_re
     try:
         response = requests.get(GTFS_RT_URL+"?file="+remote_name, timeout=5)
         if static:
-            target_path = pathlib.Path(ARCHIVE_PATH+"gtfs-rt/static/"+remote_name+"/")
+            target_path = pathlib.Path(ARCHIVE_PATH+"static/"+remote_name+"/")
         else:
-            target_path = pathlib.Path(ARCHIVE_PATH+"gtfs-rt/dynamic/"+remote_name+"/")
+            target_path = pathlib.Path(ARCHIVE_PATH+"dynamic/"+remote_name+"/")
         previous_files = list(target_path.iterdir())
         changed = False
         if len(previous_files) == 0 or max(previous_files, key=str).read_bytes() != response.content:
