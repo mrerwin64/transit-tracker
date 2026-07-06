@@ -24,6 +24,24 @@ def main():
     local_files = list_local_files()
     remote_files = list_remote_files()
 
+    mismatches = []
+    local_only = []
+    remote_only = set(remote_files.keys())
+    for filename, filedata in local_files.items():
+        remote_only.discard(filename)
+        if filename in remote_files:
+            if filedata != remote_files[filename]:
+                mismatches.append(filename)
+        else:
+            local_only.append(filename)
+
+    for filename in remote_only:
+        download_gtfs_file(filename)
+    for filename in mismatches:
+        update_gtfs_file(filename)
+    for filename in local_only:
+        retire_gtfs_file(filename)
+
 
 def verify_manifest() -> tuple[bool, int]:
     errors = -1
@@ -61,6 +79,18 @@ def list_remote_files() -> dict[str, dict[str, str]]:
             "modified": datetime.strptime(modified.strip(), "%d.%m.%Y, %H:%M:%S").isoformat(),
         }
     return files
+
+
+def download_gtfs_file(filename: str):
+    pass
+
+
+def update_gtfs_file(filename: str):
+    pass
+
+
+def retire_gtfs_file(filename: str):
+    pass
 
 
 # Entry point
