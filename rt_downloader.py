@@ -234,9 +234,9 @@ def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_re
     try:
         response = requests.get(GTFS_RT_URL+"?file="+remote_name, timeout=5)
         if static:
-            target_path = pathlib.Path(ARCHIVE_PATH+"static/"+remote_name+"/")
+            target_path = pathlib.Path(ARCHIVE_PATH)/"static"/remote_name
         else:
-            target_path = pathlib.Path(ARCHIVE_PATH+"dynamic/"+remote_name+"/")
+            target_path = pathlib.Path(ARCHIVE_PATH)/"dynamic"/remote_name
         previous_files = list(target_path.iterdir())
         changed = False
         if len(previous_files) == 0 or max(previous_files, key=str).read_bytes() != response.content:
