@@ -97,6 +97,7 @@ def load_constants():
     global GTFS_RT_URL, GTFS_RT_DYNAMIC_FILES, GTFS_RT_STATIC_FILES, ARCHIVE_PATH, LOGFILE_PATH, VERBOSE, LOG_BUFFER_SIZE, POLLING_INTERVAL
 
     try:
+        # noinspection PyUnresolvedReferences
         import downloader_config as cfg
     except ModuleNotFoundError as e:
         return False, e
@@ -278,6 +279,7 @@ def log(message: str, level="INFO", timestamp=True, console=True, file=True, ver
     if verbose and not VERBOSE:
         return
 
+    #noinspection DuplicatedCode
     entry = ""
     if level != "":
         entry += f"[{level}]"
