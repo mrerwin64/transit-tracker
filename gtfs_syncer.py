@@ -3,6 +3,7 @@ from datetime import datetime
 import requests
 import pathlib
 import json
+import time
 import re
 
 
@@ -36,9 +37,9 @@ def main():
             local_only.append(filename)
 
     for filename in remote_only:
-        download_gtfs_file(filename)
+        download_gtfs_file(filename, remote_files[filename]["modified"], remote_files[filename]["size"])
     for filename in mismatches:
-        update_gtfs_file(filename)
+        update_gtfs_file(filename, remote_files[filename]["modified"], remote_files[filename]["size"])
     for filename in local_only:
         retire_gtfs_file(filename)
 
@@ -81,12 +82,9 @@ def list_remote_files() -> dict[str, dict[str, str]]:
     return files
 
 
-def download_gtfs_file(filename: str):
-    pass
-
-
-def update_gtfs_file(filename: str):
-    pass
+def update_gtfs_file(filename: str, modified: str, size: str):
+    retire_gtfs_file(filename)
+    download_gtfs_file(filename, modified, size)
 
 
 def retire_gtfs_file(filename: str):
@@ -101,7 +99,22 @@ def retire_gtfs_file(filename: str):
     manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
     manifest = json.load(manifest_path.open())
     manifest[new_name] = manifest.pop(filename)
-    json.dump(manifest, manifest_path.open('w'))
+    json.dump(manifest, manifest_path.open('w'), indent=2, sort_keys=True)
+
+
+def download_gtfs_file(filename: str, modified: str, size: str):
+    # Save the file on disk
+    file_path = pathlib.Path(ARCHIVE_PATH)/filename
+    response = requests.get(GTFS_DOWNLOAD_URL, params={"file": filename}, timeout=30)
+    response.raise_for_status()
+    file_path.write_bytes(response.content)
+    # Add it to the manifest
+    manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
+    manifest = json.load(manifest_path.open())
+    manifest[filename] = {"modified": modified, "size": size}
+    json.dump(manifest, manifest_path.open('w'), indent=2, sort_keys=True)
+    # Request delay
+    time.sleep(REQUEST_DELAY)
 
 
 # Entry point
