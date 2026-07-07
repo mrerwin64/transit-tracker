@@ -146,11 +146,12 @@ def prepare_directory_structure():
             - (False, exception) if directory creation failed.
     """
     archive_path = pathlib.Path(ARCHIVE_PATH)
+    archive_parent = archive_path.parent
     gtfs_rt_dynamic_path = archive_path/"dynamic/"
     gtfs_rt_static_path = archive_path/"static/"
     gtfs_rt_dynamic_file_paths = [archive_path/"dynamic"/x for x in GTFS_RT_DYNAMIC_FILES]
     gtfs_rt_static_file_paths = [archive_path/"static"/x for x in GTFS_RT_STATIC_FILES]
-    required_paths = [archive_path, gtfs_rt_dynamic_path, gtfs_rt_static_path] + gtfs_rt_dynamic_file_paths + gtfs_rt_static_file_paths
+    required_paths = [archive_parent, archive_path, gtfs_rt_dynamic_path, gtfs_rt_static_path] + gtfs_rt_dynamic_file_paths + gtfs_rt_static_file_paths
 
     try:
         for path in required_paths:
