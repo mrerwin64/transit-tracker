@@ -45,8 +45,7 @@ def main():
 
 def verify_manifest():
     errors = -1
-    manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
-    manifest_files = set(json.load(manifest_path.open()).keys())
+    manifest_files = set(load_manifest().keys())
     disk_files = pathlib.Path(ARCHIVE_PATH).iterdir()
 
     for disk in [x.name for x in disk_files]:
@@ -61,8 +60,7 @@ def verify_manifest():
 
 
 def list_local_files(old=False) -> dict[str, dict[str, str]]:
-    manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
-    files = json.load(manifest_path.open())
+    files = load_manifest()
 
     if not old:
         for filename in list(files.keys()):
@@ -102,19 +100,14 @@ def retire_gtfs_file(filename: str):
     file = pathlib.Path(ARCHIVE_PATH)/filename
     file.rename(file.parent/new_name)
     # Update the manifest
-    manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
-    manifest = json.load(manifest_path.open())
-    manifest[new_name] = manifest.pop(filename)
-    manifest_temp_path = pathlib.Path(ARCHIVE_PATH)/"manifest.temp"
-    json.dump(manifest, manifest_temp_path.open('w'), indent=2, sort_keys=True)
-    manifest_temp_path.replace(manifest_path)
+    rename_manifest_entry(filename, new_name)
 
 
 def download_gtfs_file(filename: str, modified: str, size: str):
     # Fetch the file
     response = requests.get(GTFS_DOWNLOAD_URL, params={"file": filename}, timeout=30)
     response.raise_for_status()
-    # Test if it's and uncorrupted zip archive
+    # Test if it's an uncorrupted zip archive
     try:
         with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
             bad_file = zf.testzip()
@@ -125,15 +118,33 @@ def download_gtfs_file(filename: str, modified: str, size: str):
     # Save it
     file_path = pathlib.Path(ARCHIVE_PATH)/filename
     file_path.write_bytes(response.content)
-    # Add it to the manifest
-    manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
-    manifest = json.load(manifest_path.open())
-    manifest[filename] = {"modified": modified, "size": size}
-    manifest_temp_path = pathlib.Path(ARCHIVE_PATH)/"manifest.temp"
-    json.dump(manifest, manifest_temp_path.open('w'), indent=2, sort_keys=True)
-    manifest_temp_path.replace(manifest_path)
+    # Update the manifest
+    add_manifest_entry(filename, modified, size)
     # Request delay
     time.sleep(REQUEST_DELAY)
+
+
+def rename_manifest_entry(old_filename: str, new_filename: str):
+    manifest = load_manifest()
+    manifest[new_filename] = manifest.pop(old_filename)
+    save_manifest(manifest)
+
+
+def add_manifest_entry(filename: str, modified: str, size: str):
+    manifest = load_manifest()
+    manifest[filename] = {"modified": modified, "size": size}
+    save_manifest(manifest)
+
+
+manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
+def load_manifest() -> dict[str, dict[str, str]]:
+    return json.load(manifest_path.open())
+
+
+def save_manifest(content: dict[str, dict[str, str]]):
+    manifest_temp_path = pathlib.Path(ARCHIVE_PATH)/"manifest.temp"
+    json.dump(content, manifest_temp_path.open('w'), indent=2, sort_keys=True)
+    manifest_temp_path.replace(manifest_path)
 
 
 # Entry point
