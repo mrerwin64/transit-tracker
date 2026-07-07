@@ -19,7 +19,8 @@ REQUEST_DELAY = 0.5
 
 # Functions
 error_logged = False
-def main():
+def main() -> None:
+    """Entry point: verify the manifest, classify files against remote, then sync and log the results."""
     try:
         initialize_logs()
         log("#"*5 + " PREPARATION " + "#"*5, level="")
@@ -67,13 +68,22 @@ def main():
         raise e
 
 
-def initialize_logs():
+def initialize_logs() -> None:
     """Write a blank line and a startup banner to the logfile, marking a new run."""
     log("", level="", timestamp=False, console=False)
     log("#"*20 + " STARTING GTFS SYNC " + "#"*20, level="", console=False)
 
 
-def verify_manifest():
+def verify_manifest() -> None:
+    """Check that manifest.json and the archive directory agree on which files exist.
+
+    Counts files present on disk but missing from the manifest, and manifest
+    entries with no corresponding file on disk. Logs and raises if any
+    discrepancy is found.
+
+    Raises:
+        Exception: "ManifestError" if disk contents and the manifest disagree.
+    """
     errors = -1
     manifest_files = set(load_manifest().keys())
     disk_files = pathlib.Path(ARCHIVE_PATH).iterdir()
@@ -92,7 +102,16 @@ def verify_manifest():
         raise Exception("ManifestError")
 
 
-def list_local_files(old=False) -> dict[str, dict[str, str]]:
+def list_local_files(old: bool=False) -> dict[str, dict[str, str]]:
+    """Return the manifest's known files, keyed by filename.
+
+    Args:
+        old: If False (default), entries whose filename ends in ".old" (retired
+            archives) are excluded, leaving only the live/current files.
+
+    Returns:
+        Dict mapping each filename to its {"size": str, "modified": str} entry.
+    """
     files = load_manifest()
 
     if not old:
@@ -104,6 +123,19 @@ def list_local_files(old=False) -> dict[str, dict[str, str]]:
 
 
 def list_remote_files() -> dict[str, dict[str, str]]:
+    """Fetch and parse the table of available GTFS files from ZTM's open data page.
+
+    Logs and raises if the page can't be fetched, or if it can be fetched but
+    no filename rows are found (more likely a scrape/page-structure failure
+    than ZTM genuinely listing zero files).
+
+    Returns:
+        Dict mapping each filename to its {"size": str, "modified": str} entry.
+
+    Raises:
+        requests.exceptions.RequestException: If the page request fails.
+        Exception: "NoRemoteFiles" if zero files were parsed from the page.
+    """
     try:
         response = requests.get(GTFS_LIST_URL, timeout=30)
         response.raise_for_status()
@@ -130,12 +162,32 @@ def list_remote_files() -> dict[str, dict[str, str]]:
     return files
 
 
-def update_gtfs_file(filename: str, modified: str, size: str):
+def update_gtfs_file(filename: str, modified: str, size: str) -> None:
+    """Replace a locally-outdated GTFS file with the current remote version.
+
+    Retires the existing file (freeing up its filename) before downloading the
+    new content under that same name.
+
+    Args:
+        filename: Name of the GTFS archive to update.
+        modified: Remote "modified" timestamp to record in the manifest.
+        size: Remote size string to record in the manifest.
+    """
     retire_gtfs_file(filename)
     download_gtfs_file(filename, modified, size)
 
 
-def retire_gtfs_file(filename: str):
+def retire_gtfs_file(filename: str) -> None:
+    """Rename a file to mark it as no longer current, cascading .old suffixes as needed.
+
+    If the target ".old" name is already occupied, that file is retired first
+    (recursively), so existing history is pushed down a level (e.g. "foo.zip.old"
+    becomes "foo.zip.old.old") rather than being overwritten. The manifest is
+    updated to match.
+
+    Args:
+        filename: Name of the file to retire.
+    """
     # Make sure the new filename is unoccupied
     new_name = filename+".old"
     if (pathlib.Path(ARCHIVE_PATH)/new_name).exists():
@@ -153,7 +205,21 @@ def retire_gtfs_file(filename: str):
     rename_manifest_entry(filename, new_name)
 
 
-def download_gtfs_file(filename: str, modified: str, size: str):
+def download_gtfs_file(filename: str, modified: str, size: str) -> None:
+    """Download a GTFS archive, verify it, save it to disk, and record it in the manifest.
+
+    Logs and raises if the download fails, or if the downloaded content is not
+    an intact zip archive (checked via zipfile.testzip()).
+
+    Args:
+        filename: Name of the GTFS archive to download.
+        modified: Remote "modified" timestamp to record in the manifest.
+        size: Remote size string to record in the manifest.
+
+    Raises:
+        requests.exceptions.RequestException: If the download fails.
+        Exception: "CorruptedGtfs" if the downloaded content isn't a valid zip.
+    """
     # Fetch the file
     try:
         response = requests.get(GTFS_DOWNLOAD_URL, params={"file": filename}, timeout=30)
@@ -192,19 +258,41 @@ def download_gtfs_file(filename: str, modified: str, size: str):
     time.sleep(REQUEST_DELAY)
 
 
-def rename_manifest_entry(old_filename: str, new_filename: str):
+def rename_manifest_entry(old_filename: str, new_filename: str) -> None:
+    """Rename a manifest entry in place, keeping its {size, modified} data.
+
+    Args:
+        old_filename: Existing manifest key to rename.
+        new_filename: New key to move the entry's data under.
+    """
     manifest = load_manifest()
     manifest[new_filename] = manifest.pop(old_filename)
     save_manifest(manifest)
 
 
-def add_manifest_entry(filename: str, modified: str, size: str):
+def add_manifest_entry(filename: str, modified: str, size: str) -> None:
+    """Add or overwrite a manifest entry with the given metadata.
+
+    Args:
+        filename: Manifest key to write.
+        modified: Remote "modified" timestamp to record.
+        size: Remote size string to record.
+    """
     manifest = load_manifest()
     manifest[filename] = {"modified": modified, "size": size}
     save_manifest(manifest)
 
 
 def load_manifest() -> dict[str, dict[str, str]]:
+    """Read and parse manifest.json.
+
+    Returns:
+        Dict mapping each filename to its {"size": str, "modified": str} entry.
+
+    Raises:
+        Exception: Whatever the underlying read/parse failure was, re-raised
+            after logging.
+    """
     manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
     try:
         with manifest_path.open() as f:
@@ -216,7 +304,19 @@ def load_manifest() -> dict[str, dict[str, str]]:
         raise e
 
 
-def save_manifest(content: dict[str, dict[str, str]]):
+def save_manifest(content: dict[str, dict[str, str]]) -> None:
+    """Write manifest.json atomically.
+
+    Writes to a temporary file first, then replaces manifest.json with it, so a
+    failure partway through never leaves the real manifest truncated or corrupt.
+
+    Args:
+        content: Full manifest dict to write, replacing the existing file.
+
+    Raises:
+        Exception: Whatever the underlying write/replace failure was, re-raised
+            after logging.
+    """
     manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
     manifest_temp_path = pathlib.Path(ARCHIVE_PATH)/"manifest.temp"
     try:
@@ -236,7 +336,7 @@ def save_manifest(content: dict[str, dict[str, str]]):
         raise e
 
 
-def log(message: str, level="INFO", timestamp=True, console=True, file=True):
+def log(message: str, level: str = "INFO", timestamp: bool = True, console: bool = True, file: bool = True) -> None:
     """Write a log entry to the console and/or logfile.
 
     Args:
