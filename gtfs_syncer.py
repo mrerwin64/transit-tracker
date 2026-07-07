@@ -90,7 +90,18 @@ def update_gtfs_file(filename: str):
 
 
 def retire_gtfs_file(filename: str):
-    pass
+    # Make sure the new filename is unoccupied
+    new_name = filename+".old"
+    if (pathlib.Path(ARCHIVE_PATH)/new_name).exists():
+        retire_gtfs_file(new_name)
+    # Rename the file
+    file = pathlib.Path(ARCHIVE_PATH)/filename
+    file.rename(file.parent/new_name)
+    # Update the manifest
+    manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
+    manifest = json.load(manifest_path.open())
+    manifest[new_name] = manifest.pop(filename)
+    json.dump(manifest, manifest_path.open('w'))
 
 
 # Entry point
