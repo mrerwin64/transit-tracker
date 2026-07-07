@@ -136,12 +136,12 @@ def list_remote_files() -> dict[str, dict[str, str]]:
         requests.exceptions.RequestException: If the page request fails.
         Exception: "NoRemoteFiles" if zero files were parsed from the page.
     """
+    global error_logged
     try:
         response = requests.get(GTFS_LIST_URL, timeout=30)
         response.raise_for_status()
     except Exception as e:
         log(f"Failed to fetch remote file list ({e})", level="ERROR")
-        global error_logged
         error_logged = True
         raise e
 
@@ -156,7 +156,6 @@ def list_remote_files() -> dict[str, dict[str, str]]:
 
     if len(files) == 0:
         log("Remote fetch failure - no files listed", level="ERROR")
-        global error_logged
         error_logged = True
         raise Exception("NoRemoteFiles")
     return files
@@ -220,13 +219,13 @@ def download_gtfs_file(filename: str, modified: str, size: str) -> None:
         requests.exceptions.RequestException: If the download fails.
         Exception: "CorruptedGtfs" if the downloaded content isn't a valid zip.
     """
+    global error_logged
     # Fetch the file
     try:
         response = requests.get(GTFS_DOWNLOAD_URL, params={"file": filename}, timeout=30)
         response.raise_for_status()
     except Exception as e:
         log(f"Failed to download GTFS file {filename} ({e})", level="ERROR")
-        global error_logged
         error_logged = True
         raise e
     # Test if it's an uncorrupted zip archive
@@ -235,12 +234,10 @@ def download_gtfs_file(filename: str, modified: str, size: str) -> None:
             bad_file = zf.testzip()
             if bad_file is not None:
                 log("Downloaded malformed GTFS file - not saved to disk", level="ERROR")
-                global error_logged
                 error_logged = True
                 raise Exception("CorruptedGtfs")
     except zipfile.BadZipFile:
         log("Downloaded malformed GTFS file - not saved to disk", level="ERROR")
-        global error_logged
         error_logged = True
         raise Exception("CorruptedGtfs")
     # Save it
@@ -249,7 +246,6 @@ def download_gtfs_file(filename: str, modified: str, size: str) -> None:
         file_path.write_bytes(response.content)
     except Exception as e:
         log(f"Filesystem error while saving file {filename} ({e})", level="ERROR")
-        global error_logged
         error_logged = True
         raise e
     # Update the manifest
@@ -317,6 +313,7 @@ def save_manifest(content: dict[str, dict[str, str]]) -> None:
         Exception: Whatever the underlying write/replace failure was, re-raised
             after logging.
     """
+    global error_logged
     manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
     manifest_temp_path = pathlib.Path(ARCHIVE_PATH)/"manifest.temp"
     try:
@@ -324,14 +321,12 @@ def save_manifest(content: dict[str, dict[str, str]]) -> None:
             json.dump(content, f, indent=2, sort_keys=True)
     except Exception as e:
         log(f"Failed to write changes to temporary manifest file ({e})", level="ERROR")
-        global error_logged
         error_logged = True
         raise e
     try:
         manifest_temp_path.replace(manifest_path)
     except Exception as e:
         log(f"Failed to replace manifest.json with manifest.temp ({e})", level="ERROR")
-        global error_logged
         error_logged = True
         raise e
 
