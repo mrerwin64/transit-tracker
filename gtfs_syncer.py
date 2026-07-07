@@ -2,9 +2,11 @@
 from datetime import datetime
 import requests
 import pathlib
+import zipfile
 import json
 import time
 import re
+import io
 
 
 # Constant defaults
@@ -17,10 +19,7 @@ REQUEST_DELAY = 0.5
 
 # Functions
 def main():
-    manifest_integrity = verify_manifest()
-    if not manifest_integrity[0]:
-        print(f"{manifest_integrity[1]} errors in manifest.json")
-        return
+    verify_manifest()
 
     local_files = list_local_files()
     remote_files = list_remote_files()
@@ -44,7 +43,7 @@ def main():
         retire_gtfs_file(filename)
 
 
-def verify_manifest() -> tuple[bool, int]:
+def verify_manifest():
     errors = -1
     manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
     manifest_files = set(json.load(manifest_path.open()).keys())
@@ -57,15 +56,19 @@ def verify_manifest() -> tuple[bool, int]:
             errors += 1
     errors += len(manifest_files)
 
-    if errors == 0:
-        return True, errors
-    else:
-        return False, errors
+    if errors != 0:
+        raise Exception("ManifestError")
 
 
-def list_local_files() -> dict[str, dict[str, str]]:
+def list_local_files(old=False) -> dict[str, dict[str, str]]:
     manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
     files = json.load(manifest_path.open())
+
+    if not old:
+        for filename in list(files.keys()):
+            if filename[-4:] == ".old":
+                del files[filename]
+
     return files
 
 
@@ -79,6 +82,9 @@ def list_remote_files() -> dict[str, dict[str, str]]:
             "size": size.strip(),
             "modified": datetime.strptime(modified.strip(), "%d.%m.%Y, %H:%M:%S").isoformat(),
         }
+
+    if len(files) == 0:
+        raise Exception("NoRemoteFiles")
     return files
 
 
@@ -99,20 +105,33 @@ def retire_gtfs_file(filename: str):
     manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
     manifest = json.load(manifest_path.open())
     manifest[new_name] = manifest.pop(filename)
-    json.dump(manifest, manifest_path.open('w'), indent=2, sort_keys=True)
+    manifest_temp_path = pathlib.Path(ARCHIVE_PATH)/"manifest.temp"
+    json.dump(manifest, manifest_temp_path.open('w'), indent=2, sort_keys=True)
+    manifest_temp_path.replace(manifest_path)
 
 
 def download_gtfs_file(filename: str, modified: str, size: str):
-    # Save the file on disk
-    file_path = pathlib.Path(ARCHIVE_PATH)/filename
+    # Fetch the file
     response = requests.get(GTFS_DOWNLOAD_URL, params={"file": filename}, timeout=30)
     response.raise_for_status()
+    # Test if it's and uncorrupted zip archive
+    try:
+        with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+            bad_file = zf.testzip()
+            if bad_file is not None:
+                raise Exception("CorruptedGtfs")
+    except zipfile.BadZipFile:
+        raise Exception("CorruptedGtfs")
+    # Save it
+    file_path = pathlib.Path(ARCHIVE_PATH)/filename
     file_path.write_bytes(response.content)
     # Add it to the manifest
     manifest_path = pathlib.Path(ARCHIVE_PATH)/"manifest.json"
     manifest = json.load(manifest_path.open())
     manifest[filename] = {"modified": modified, "size": size}
-    json.dump(manifest, manifest_path.open('w'), indent=2, sort_keys=True)
+    manifest_temp_path = pathlib.Path(ARCHIVE_PATH)/"manifest.temp"
+    json.dump(manifest, manifest_temp_path.open('w'), indent=2, sort_keys=True)
+    manifest_temp_path.replace(manifest_path)
     # Request delay
     time.sleep(REQUEST_DELAY)
 
