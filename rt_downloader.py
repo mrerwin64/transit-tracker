@@ -27,12 +27,16 @@ POLLING_INTERVAL = 60
 # Functions
 def main() -> None:
     """Entry point: set up signal handling, logging, config and directories, then poll until shutdown."""
-    setup_signal_handlers()
-    initialize_logs()
-    load_configuration()
-    initialize_directories()
-    run_polling_loop()
-    log("Cleanup complete")
+    try:
+        setup_signal_handlers()
+        initialize_logs()
+        load_configuration()
+        initialize_directories()
+        run_polling_loop()
+        log("Cleanup complete")
+    except Exception as e:
+        log(f"Unexpected error occurred ({e})", level="ERROR")
+        raise e
 
 
 #noinspection DuplicatedCode
