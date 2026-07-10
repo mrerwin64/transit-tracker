@@ -137,8 +137,9 @@ def initialize_directories():
 def prepare_directory_structure():
     """Create the archive directory tree, removing any files that occupy expected directory paths.
 
-    Ensures ARCHIVE_PATH and its dynamic/ and static/ subdirectories exist,
-    along with a subdirectory for each configured GTFS-RT file.
+    Ensures ARCHIVE_PATH (and any missing parent directories) and its
+    dynamic/ and static/ subdirectories exist, along with a subdirectory
+    for each configured GTFS-RT file.
 
     Returns:
         Tuple of (success, detail):
@@ -146,20 +147,17 @@ def prepare_directory_structure():
             - (False, exception) if directory creation failed.
     """
     archive_path = pathlib.Path(ARCHIVE_PATH)
-    archive_parent = archive_path.parent
     gtfs_rt_dynamic_path = archive_path/"dynamic/"
     gtfs_rt_static_path = archive_path/"static/"
     gtfs_rt_dynamic_file_paths = [archive_path/"dynamic"/x for x in GTFS_RT_DYNAMIC_FILES]
     gtfs_rt_static_file_paths = [archive_path/"static"/x for x in GTFS_RT_STATIC_FILES]
-    required_paths = [archive_parent, archive_path, gtfs_rt_dynamic_path, gtfs_rt_static_path] + gtfs_rt_dynamic_file_paths + gtfs_rt_static_file_paths
+    required_paths = [archive_path, gtfs_rt_dynamic_path, gtfs_rt_static_path] + gtfs_rt_dynamic_file_paths + gtfs_rt_static_file_paths
 
     try:
         for path in required_paths:
-            if not path.exists():
-                path.mkdir()
-            elif path.is_file():
+            if path.is_file():
                 path.unlink()
-                path.mkdir()
+            path.mkdir(parents=True, exist_ok=True)
         return True, None
     except Exception as e:
         return False, e
