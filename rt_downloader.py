@@ -7,6 +7,7 @@ Configuration can be overridden via an optional downloader_config.py module.
 # Modules
 from signal import signal, SIGINT, SIGTERM
 from datetime import datetime
+from types import FrameType
 import threading
 import requests
 import pathlib
@@ -24,7 +25,7 @@ POLLING_INTERVAL = 60
 
 
 # Functions
-def main():
+def main() -> None:
     """Entry point: set up signal handling, logging, config and directories, then poll until shutdown."""
     setup_signal_handlers()
     initialize_logs()
@@ -34,7 +35,7 @@ def main():
     log("Cleanup complete")
 
 
-def setup_signal_handlers():
+def setup_signal_handlers() -> None:
     """Register shutdown() as the handler for SIGINT and SIGTERM."""
     signal(SIGINT, shutdown)
     signal(SIGTERM, shutdown)
@@ -42,7 +43,7 @@ def setup_signal_handlers():
 
 shutting_down = False
 stop_event = threading.Event()
-def shutdown(signum, _frame):
+def shutdown(signum: int, _frame: FrameType | None) -> None:
     """Signal handler that requests a graceful shutdown.
 
     Sets the shutting_down flag and stop_event so in-progress waits/retries exit
@@ -59,13 +60,13 @@ def shutdown(signum, _frame):
     log(f"Received signal {signum}, shutting down")
 
 
-def initialize_logs():
+def initialize_logs() -> None:
     """Write a blank line and a startup banner to the logfile, marking a new run."""
     log("", level="", timestamp=False, console=False)
     log("#"*20 + " STARTING DOWNLOADER " + "#"*20, level="", console=False)
 
 
-def load_configuration():
+def load_configuration() -> None:
     """Load downloader_config.py if present and log the outcome.
 
     Applies overrides via load_constants() and logs how many parameters changed,
@@ -76,12 +77,12 @@ def load_configuration():
         if status[0]:
             log(f"Successfully loaded config file - {status[1]} parameters modified")
         else:
-            log(f"Failed to load config file: {status[1]}", level="WARNING")
+            log(f"Failed to load config file: {status[1]}", level="ERROR")
     else:
         log("No config file found", level="WARNING")
 
 
-def load_constants():
+def load_constants() -> tuple[bool, int | ModuleNotFoundError]:
     """Reload module constants from downloader_config.py, if present.
 
     Only keys already defined as module-level constants are considered; each is
@@ -125,7 +126,7 @@ def load_constants():
     return True, changes
 
 
-def initialize_directories():
+def initialize_directories() -> None:
     """Prepare the archive directory structure and log the outcome."""
     status = prepare_directory_structure()
     if status[0]:
@@ -134,7 +135,7 @@ def initialize_directories():
         log(f"Failed to prepare archive directory structure: {status[1]}", level="ERROR")
 
 
-def prepare_directory_structure():
+def prepare_directory_structure() -> tuple[bool, Exception | None]:
     """Create the archive directory tree, removing any files that occupy expected directory paths.
 
     Ensures ARCHIVE_PATH (and any missing parent directories) and its
@@ -163,7 +164,7 @@ def prepare_directory_structure():
         return False, e
 
 
-def run_polling_loop():
+def run_polling_loop() -> None:
     """Repeatedly download GTFS-RT snapshots until shutdown.
 
     Each iteration runs download_gtfs_rt_data(), then sleeps for the remainder
@@ -179,7 +180,7 @@ def run_polling_loop():
         stop_event.wait(timeout=max(0.0, POLLING_INTERVAL-elapsed))
 
 
-def download_gtfs_rt_data():
+def download_gtfs_rt_data() -> None:
     """Download one GTFS-RT snapshot: all static files, then all dynamic files.
 
     All files downloaded in this call share the same local_name timestamp.
@@ -209,7 +210,7 @@ def download_gtfs_rt_data():
             log(f"Failed to download dynamic GTFS-RT file {remote_name}: {status[1]}", level="WARNING")
 
 
-def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_retry=False):
+def download_gtfs_rt_file(remote_name: str, local_name: str, static: bool = False, is_retry: bool = False) -> tuple[bool, bool | Exception]:
     """Download a single GTFS-RT file and save it if its contents changed.
 
     Compares the downloaded content against the most recently saved file of the
@@ -257,7 +258,7 @@ def download_gtfs_rt_file(remote_name: str, local_name: str, static=False, is_re
 
 
 log_cache = []
-def log(message: str, level="INFO", timestamp=True, console=True, file=True, verbose=False):
+def log(message: str, level: str = "INFO", timestamp: bool = True, console: bool = True, file: bool = True, verbose: bool = False) -> None:
     """Write a log entry to the console and/or logfile.
 
     Entries are buffered in memory and flushed to LOGFILE_PATH once LOG_BUFFER_SIZE
