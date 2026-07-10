@@ -1,3 +1,10 @@
+"""Syncs the local GTFS static archive against ZTM Poznan's remote file listing.
+
+Runs as a one-shot process: downloads new files, updates changed ones, and
+retires files that disappeared from remote. Configuration can be overridden
+via an optional syncer_config.py module.
+"""
+
 # Modules
 from datetime import datetime
 import requests
