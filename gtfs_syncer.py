@@ -3,6 +3,7 @@ from datetime import datetime
 import requests
 import pathlib
 import zipfile
+import shutil
 import json
 import time
 import re
@@ -24,6 +25,9 @@ def main() -> None:
     try:
         initialize_logs()
         log("#"*5 + " PREPARATION " + "#"*5, level="")
+
+        initialize_archive()
+        log("On-disk archive is ready")
         verify_manifest()
         log("Manifest matches state on disk")
 
@@ -72,6 +76,43 @@ def initialize_logs() -> None:
     """Write a blank line and a startup banner to the logfile, marking a new run."""
     log("", level="", timestamp=False, console=False)
     log("#"*20 + " STARTING GTFS SYNC " + "#"*20, level="", console=False)
+
+
+def initialize_archive() -> None:
+    """Ensure the archive directory and manifest.json exist, creating them if not.
+
+    If ARCHIVE_PATH is occupied by a file, it's replaced with a directory. If
+    manifest.json is occupied by a directory, it's replaced with an empty
+    manifest file.
+
+    Raises:
+        Exception: Whatever the underlying filesystem failure was, re-raised
+            after logging.
+    """
+    global error_logged
+
+    archive_path = pathlib.Path(ARCHIVE_PATH)
+    manifest_path = archive_path/"manifest.json"
+
+    try:
+        if archive_path.is_file():
+            archive_path.unlink()
+        archive_path.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        log(f"Failed to create archive path ({e})", level="ERROR")
+        error_logged = True
+        raise e
+
+    try:
+        if not manifest_path.is_file():
+            if manifest_path.is_dir():
+                shutil.rmtree(manifest_path)
+            with manifest_path.open("w") as f:
+                json.dump({}, f)
+    except Exception as e:
+        log(f"Failed to create manifest file ({e})", level="ERROR")
+        error_logged = True
+        raise e
 
 
 def verify_manifest() -> None:
