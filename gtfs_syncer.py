@@ -26,6 +26,12 @@ def main() -> None:
         initialize_logs()
         log("#"*5 + " PREPARATION " + "#"*5, level="")
 
+        if pathlib.Path("syncer_config.py").is_file():
+            changes = load_constants()
+            log(f"Loaded config file - {changes} parameters modified")
+        else:
+            log("No config file found", level="WARNING")
+
         initialize_archive()
         log("On-disk archive is ready")
         verify_manifest()
@@ -76,6 +82,51 @@ def initialize_logs() -> None:
     """Write a blank line and a startup banner to the logfile, marking a new run."""
     log("", level="", timestamp=False, console=False)
     log("#"*20 + " STARTING GTFS SYNC " + "#"*20, level="", console=False)
+
+
+def load_constants() -> int:
+    """Reload module constants from syncer_config.py, if present.
+
+    Only keys already defined as module-level constants are considered; each is
+    overwritten in place when its value in syncer_config differs from the
+    current one.
+
+    Returns:
+        Number of constants that were updated.
+
+    Raises:
+        Exception: Whatever the underlying import failure was, re-raised after
+            logging.
+    """
+    global GTFS_LIST_URL, GTFS_DOWNLOAD_URL, LOGFILE_PATH, ARCHIVE_PATH, REQUEST_DELAY
+
+    try:
+        # noinspection PyUnresolvedReferences
+        import syncer_config as cfg
+    except Exception as e:
+        log(f"Failed to load config file ({e})", level="ERROR")
+        global error_logged
+        error_logged = True
+        raise e
+
+    keys = [
+        "GTFS_LIST_URL",
+        "GTFS_DOWNLOAD_URL",
+        "LOGFILE_PATH",
+        "ARCHIVE_PATH",
+        "REQUEST_DELAY",
+    ]
+
+    changes = 0
+    for key in keys:
+        if hasattr(cfg, key):
+            old = globals()[key]
+            new = getattr(cfg, key)
+            if new != old:
+                globals()[key] = new
+                changes += 1
+
+    return changes
 
 
 def initialize_archive() -> None:
