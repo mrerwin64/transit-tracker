@@ -22,8 +22,8 @@ import io
 # Constant defaults
 GTFS_LIST_URL = "https://www.ztm.poznan.pl/otwarte-dane/gtfsfiles/"
 GTFS_DOWNLOAD_URL = "https://www.ztm.poznan.pl/pl/dla-deweloperow/getGTFSFile/"
-LOGFILE_PATH = "syncer.log"
 ARCHIVE_PATH = "archive/gtfs/"
+LOGFILE_PATH = "syncer.log"
 REQUEST_DELAY = 0.5
 
 
