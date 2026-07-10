@@ -6,13 +6,15 @@ via an optional syncer_config.py module.
 """
 
 # Modules
+from signal import signal, SIGINT, SIGTERM
 from datetime import datetime
+from types import FrameType
+import threading
 import requests
 import pathlib
 import zipfile
 import shutil
 import json
-import time
 import re
 import io
 
@@ -30,6 +32,7 @@ error_logged = False
 def main() -> None:
     """Entry point: verify the manifest, classify files against remote, then sync and log the results."""
     try:
+        setup_signal_handlers()
         initialize_logs()
         log("#"*5 + " PREPARATION " + "#"*5, level="")
 
@@ -68,21 +71,56 @@ def main() -> None:
 
         log("#"*5 + " CHANGES MADE " + "#"*5, level="")
         for filename in remote_only:
+            if shutting_down:
+                break
             download_gtfs_file(filename, remote_files[filename]["modified"], remote_files[filename]["size"])
             log(f"Downloaded missing {filename} file from remote")
         for filename in mismatches:
+            if shutting_down:
+                break
             update_gtfs_file(filename, remote_files[filename]["modified"], remote_files[filename]["size"])
             log(f"Updated changed {filename} file to match remote")
         for filename in local_only:
+            if shutting_down:
+                break
             retire_gtfs_file(filename)
             log(f"Retired {filename} file which went missing from remote")
 
         log("#"*5 + " SUMMARY " + "#"*5, level="")
-        log(f"Sync over successfully with {len(local_only)+len(remote_only)+len(mismatches)} file changes")
+        if not shutting_down:
+            log(f"Sync over successfully with {len(local_only)+len(remote_only)+len(mismatches)} file changes")
+        else:
+            log("Sync interrupted early - stopped securely with no data loss")
     except Exception as e:
         if not error_logged:
             log(f"Unexpected error occurred: {e}", level="ERROR")
         raise e
+
+
+#noinspection DuplicatedCode
+def setup_signal_handlers() -> None:
+    """Register shutdown() as the handler for SIGINT and SIGTERM."""
+    signal(SIGINT, shutdown)
+    signal(SIGTERM, shutdown)
+
+
+shutting_down = False
+stop_event = threading.Event()
+def shutdown(signum: int, _frame: FrameType | None) -> None:
+    """Signal handler that requests a graceful shutdown.
+
+    Sets the shutting_down flag and stop_event so in-progress waits can exit
+    early and the sync loops can stop before starting further work.
+
+    Args:
+        signum: The signal number that triggered the handler (e.g. SIGINT, SIGTERM).
+        _frame: The current stack frame; unused, required by the signal handler
+            signature.
+    """
+    global shutting_down
+    shutting_down = True
+    stop_event.set()
+    log(f"Received signal {signum}, shutting down")
 
 
 def initialize_logs() -> None:
@@ -237,7 +275,7 @@ def list_remote_files() -> dict[str, dict[str, str]]:
     """
     global error_logged
     try:
-        response = requests.get(GTFS_LIST_URL, timeout=30)
+        response = requests.get(GTFS_LIST_URL, timeout=20)
         response.raise_for_status()
     except Exception as e:
         log(f"Failed to fetch remote file list ({e})", level="ERROR")
@@ -321,7 +359,7 @@ def download_gtfs_file(filename: str, modified: str, size: str) -> None:
     global error_logged
     # Fetch the file
     try:
-        response = requests.get(GTFS_DOWNLOAD_URL, params={"file": filename}, timeout=30)
+        response = requests.get(GTFS_DOWNLOAD_URL, params={"file": filename}, timeout=20)
         response.raise_for_status()
     except Exception as e:
         log(f"Failed to download GTFS file {filename} ({e})", level="ERROR")
@@ -350,7 +388,7 @@ def download_gtfs_file(filename: str, modified: str, size: str) -> None:
     # Update the manifest
     add_manifest_entry(filename, modified, size)
     # Request delay
-    time.sleep(REQUEST_DELAY)
+    stop_event.wait(timeout=REQUEST_DELAY)
 
 
 def rename_manifest_entry(old_filename: str, new_filename: str) -> None:

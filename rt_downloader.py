@@ -35,6 +35,7 @@ def main() -> None:
     log("Cleanup complete")
 
 
+#noinspection DuplicatedCode
 def setup_signal_handlers() -> None:
     """Register shutdown() as the handler for SIGINT and SIGTERM."""
     signal(SIGINT, shutdown)
