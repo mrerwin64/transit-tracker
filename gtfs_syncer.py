@@ -33,11 +33,14 @@ def main() -> None:
     """Entry point: verify the manifest, classify files against remote, then sync and log the results."""
     try:
         setup_signal_handlers()
+
+        config_file_present = pathlib.Path("syncer_config.py").is_file()
+        if config_file_present:
+            changes = load_constants()
         initialize_logs()
         log("#"*5 + " PREPARATION " + "#"*5, level="")
-
-        if pathlib.Path("syncer_config.py").is_file():
-            changes = load_constants()
+        if config_file_present:
+            # noinspection PyUnboundLocalVariable
             log(f"Loaded config file - {changes} parameters modified")
         else:
             log("No config file found", level="WARNING")
