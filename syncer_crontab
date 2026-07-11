@@ -1,1 +1,1 @@
-0 2 * * * cd /app && python gtfs_syncer.py
+0 3 * * * cd /app && python gtfs_syncer.py
