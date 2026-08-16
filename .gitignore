@@ -5,6 +5,5 @@
 /archive/
 /downloader.log
 /downloader_config.py
-/docker.version
 /syncer.log
 /syncer_config.py
