@@ -5,7 +5,7 @@ Archives public transport data from ZTM Poznań. ZTM publishes timetables as
 feeds, but keeps no history. transit-tracker downloads both continuously to build a dataset for
 analysing delays later.
 
-**Status:** the archiving part is finished and runs in Docker. The analysis part is at an early stage:
+**Status:** the archiving part is finished and runs in Docker. It has been running on my home server for 3 months and has collected 13 GB of data so far. The analysis part is at an early stage:
 there are helpers for reading the data and a first delay calculation, but no real analysis yet.
 
 ## Components
